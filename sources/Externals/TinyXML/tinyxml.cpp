@@ -979,7 +979,10 @@ bool TiXmlDocument::LoadFile( const char* filename, TiXmlEncoding encoding )
 			*dst=0 ;
 			data += buf;
 		}
+		bool readFailed = file->HasError();
 		fclose( file );
+		if (readFailed)
+			return false;
 
 		Parse( data.c_str(), 0, encoding );
 
@@ -999,8 +1002,9 @@ bool TiXmlDocument::SaveFile( const char * filename ) const
 	if ( fp )
 	{
 		Print( fp, 0 );
+		bool succeeded = fp->Flush() && !fp->HasError();
 		fclose( fp );
-		return true;
+		return succeeded;
 	}
 	return false;
 }

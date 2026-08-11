@@ -664,6 +664,11 @@ void SDLGUIWindowImp::ProcessExpose()
 	_window->Update() ;
 }
 
+void SDLGUIWindowImp::ProcessResume() {
+    _window->ForceFullRedraw() ;
+	_window->Update() ;
+}
+
 void SDLGUIWindowImp::ProcessQuit()
 {
 	GUIPoint p;
@@ -674,8 +679,9 @@ void SDLGUIWindowImp::ProcessQuit()
 void SDLGUIWindowImp::PushEvent(GUIEvent &event)
 {
 	SDL_Event sdlevent ;
-	sdlevent.type=SDL_USEREVENT ;
-	sdlevent.user.data1=&event ;
+    memset(&sdlevent, 0, sizeof(sdlevent));
+    sdlevent.type = SDL_USEREVENT;
+    sdlevent.user.data1=&event ;
 	SDL_PushEvent(&sdlevent) ;
 } ;
 

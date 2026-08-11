@@ -42,7 +42,8 @@ public:	// I_GUIGraphics implementation
 	virtual void Lock() ;
 	virtual void Unlock() ;
 	virtual void Update() ;
-	virtual void onUpdate()=0 ;
+    virtual void ForceFullRedraw() {};
+    virtual void onUpdate()=0 ;
 //	virtual void Save() ;
 //	virtual void Restore() ;
 	void PushEvent(GUIEvent &event) ;
@@ -75,7 +76,4 @@ private:
     I_GUIWindowImp *_imp ;            // the implementation system-dependant window
 } ;
 
-
 #endif
-
-

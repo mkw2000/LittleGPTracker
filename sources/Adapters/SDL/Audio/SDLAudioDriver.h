@@ -10,13 +10,15 @@ class SDLAudioDriver ;
 class SDLAudioDriverThread: public SysThread {
 public:
 	SDLAudioDriverThread(SDLAudioDriver *driver) ;
-	virtual ~SDLAudioDriverThread() {} ;
+    virtual ~SDLAudioDriverThread();
+    bool StartNative() ;
 	virtual bool Execute() ;
 	virtual void RequestTermination() ;
 	void Notify() ;
 private:
 	SDLAudioDriver *driver_ ;
 	SysSemaphore *semaphore_ ;
+    SDL_Thread *threadHandle_;
 } ;
 
 class SDLAudioDriver:public AudioDriver {

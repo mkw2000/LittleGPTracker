@@ -24,8 +24,8 @@ protected:
 	bool shouldTerminate() ;
 
 private:
-	bool shouldTerminate_ ;
-	bool isFinished_ ;
+  volatile bool shouldTerminate_;
+  volatile bool isFinished_;
 } ;
 
 // semaphores

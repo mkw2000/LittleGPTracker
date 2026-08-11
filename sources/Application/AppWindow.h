@@ -35,6 +35,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     virtual void ClearRect(GUIRect &rect);
     virtual void SetColor(ColorDefinition cd);
     void SetDirty();
+    virtual void ForceFullRedraw();
 
   protected: // GUIWindow implementation
     virtual bool onEvent(GUIEvent &event);
@@ -58,6 +59,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
 
     void defineColor(const char *colorName, GUIColor &color);
 
+    void UnloadProject();
     void onQuitApp();
 
   private:

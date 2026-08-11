@@ -18,10 +18,14 @@ void SampleVariable::Update(Observable &o,I_ObservableData *d) {
 	// if we recieved notification that an element has been removed
 	// we shift down all the index above the removed element
 	if (e->type_==SPET_DELETE) {
-		NAssert(e->index_!=value_.index_) ;
-		if (value_.index_>e->index_) {
+		if (value_.index_==e->index_) {
+			value_.index_=-1 ;
+			onChange() ;
+		} else if (value_.index_>e->index_) {
 			value_.index_-- ;
 		} ;
+	} else if (e->type_==SPET_REPLACE && value_.index_==e->index_) {
+		onChange() ;
 	} ;
 	SamplePool *pool=(SamplePool*)&o ;
 	list_.char_=pool->GetNameList() ;

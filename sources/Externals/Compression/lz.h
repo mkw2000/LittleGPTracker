@@ -48,7 +48,8 @@ int LZ_CompressFast( unsigned char *in, unsigned char *out,
                      unsigned int insize, unsigned int *work );
 void LZ_Uncompress( unsigned char *in, unsigned char *out,
                     unsigned int insize );
-
+int LZ_UncompressSafe(const unsigned char *in, unsigned int insize,
+                      unsigned char *out, unsigned int outsize);
 
 #ifdef __cplusplus
 }

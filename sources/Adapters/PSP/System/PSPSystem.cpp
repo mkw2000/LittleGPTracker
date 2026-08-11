@@ -1,22 +1,26 @@
 
 #include "PSPSystem.h"
 #include "Adapters/Dummy/Midi/DummyMidi.h"
+#include "Adapters/PSP/FileSystem/PSPFileSystem.h"
 #include "Adapters/SDL/Audio/SDLAudio.h"
-#include "Adapters/SDL/GUI/SDLEventManager.h"
 #include "Adapters/SDL/GUI/GUIFactory.h"
+#include "Adapters/SDL/GUI/SDLEventManager.h"
 #include "Adapters/SDL/GUI/SDLGUIWindowImp.h"
 #include "Adapters/SDL/Process/SDLProcess.h"
-#include "Adapters/PSP/FileSystem/PSPFileSystem.h"
 #include "Adapters/SDL/Timer/SDLTimer.h"
 #include "Application/Model/Config.h"
 #include "System/Console/Logger.h"
-#include <time.h>
-#include <pspdebug.h>
-#include <sys/time.h>
 #include <malloc.h>
+#include <pspdebug.h>
+#include <psppower.h>
+#include <pspthreadman.h>
 #include <stdlib.h>
+#include <sys/time.h>
+#include <time.h>
 
 EventManager *PSPSystem::eventManager_ = NULL ;
+volatile bool PSPSystem::suspended_ = false;
+volatile bool PSPSystem::resumePending_ = false ;
 
 int PSPSystem::MainLoop() 
 {
@@ -24,7 +28,7 @@ int PSPSystem::MainLoop()
 	return eventManager_->MainLoop() ;
 } ;
 
-void PSPSystem::Boot(int argc,char **argv) {
+bool PSPSystem::Boot(int argc,char **argv) {
 #ifdef PSPDEBUG
 	pspDebugScreenInit();
 #endif
@@ -71,23 +75,16 @@ void PSPSystem::Boot(int argc,char **argv) {
 
 	SysProcessFactory::Install(new SDLProcessFactory()) ;
 
-	if ( SDL_Init(SDL_INIT_VIDEO|SDL_INIT_JOYSTICK|SDL_INIT_TIMER) < 0 )   {
-		return;
-	}
-#ifndef SDL2
-    SDL_EnableUNICODE(1);
-#endif
-    SDL_ShowCursor(SDL_DISABLE);
+    eventManager_ = I_GUIWindowFactory::GetInstance()->GetEventManager();
+    if (!eventManager_->Init()) {
+        Trace::Error("Failed to initialize PSP SDL event manager");
+        return false;
+    }
 
-	atexit(SDL_Quit);
+    // PSP SDL Basic config
 
- 	eventManager_=I_GUIWindowFactory::GetInstance()->GetEventManager() ;
-	eventManager_->Init() ;
-
-	// PSP SDL Basic config
-
-	bool invert=false ;
-	Config *config=Config::GetInstance() ;
+    bool invert = false;
+    Config *config=Config::GetInstance() ;
 	const char *s=config->GetValue("INVERT") ;
 
 	if ((s)&&(!strcmp(s,"YES"))) {
@@ -109,23 +106,43 @@ void PSPSystem::Boot(int argc,char **argv) {
 	eventManager_->MapAppButton("but:0:5",APP_BUTTON_R) ;
 	eventManager_->MapAppButton("but:0:11",APP_BUTTON_START) ;
 
+	return true;
 } ;
 
 void PSPSystem::Shutdown() {
 } ;
 
+void PSPSystem::HandlePowerEvent(int powerInfo) {
+    if (powerInfo & PSP_POWER_CB_SUSPENDING) {
+        suspended_ = true;
+        resumePending_ = false;
+    }
+
+    if ((powerInfo & PSP_POWER_CB_RESUME_COMPLETE) && suspended_)
+        resumePending_ = true;
+}
+
+bool PSPSystem::ConsumeResumeEvent() {
+    if (!resumePending_)
+        return false;
+
+    resumePending_ = false;
+    suspended_ = false;
+    return true;
+}
+
 unsigned long PSPSystem::GetClock() {
-	struct timeval now;
-	Uint32 ticks;
-	gettimeofday(&now, NULL);
-	ticks=(now.tv_sec)*1000+(now.tv_usec)/1000;
-	return(ticks);
+    struct timeval now;
+    Uint32 ticks;
+    gettimeofday(&now, NULL);
+    ticks = (now.tv_sec) * 1000 + (now.tv_usec) / 1000;
+    return (ticks);
 }
 
 void PSPSystem::Sleep(int millisec) {
-/*	if (millisec>0)
-		::Sleep(millisec) ;
-*/}
+    if (millisec > 0)
+        sceKernelDelayThread((SceUInt)millisec * 1000);
+}
 
 void *PSPSystem::Malloc(unsigned size) {
 	return malloc(size) ;
@@ -166,9 +183,9 @@ void PSPSystem::AddUserLog(const char *msg) {
 */
 void PSPSystem::PostQuitMessage() {
 	SDLEventManager::GetInstance()->PostQuitMessage() ;
-} ; 
+};
 
 unsigned int PSPSystem::GetMemoryUsage() {
-	struct mallinfo m=mallinfo();	
-	return m.uordblks ;
+    struct mallinfo m = mallinfo();
+    return m.uordblks;
 }

@@ -9,19 +9,34 @@ void sdl_callback(void *userdata, Uint8 *stream, int len) {
     sound->OnChunkDone(stream, len);
 };
 
+static int sdlAudioThreadStart(void *arg) {
+    SDLAudioDriverThread *thread = (SDLAudioDriverThread *)arg;
+    thread->startExecution();
+    return 0;
+}
+
 SDLAudioDriverThread::SDLAudioDriverThread(SDLAudioDriver *driver) {
     semaphore_ = SysSemaphore::Create(0, 4);
     driver_ = driver;
+    threadHandle_ = 0;
 };
+
+SDLAudioDriverThread::~SDLAudioDriverThread() { delete semaphore_; }
+
+bool SDLAudioDriverThread::StartNative() {
+    if (!semaphore_)
+        return false;
+    threadHandle_ = SDL_CreateThread(sdlAudioThreadStart, this);
+    return threadHandle_ != 0;
+}
 
 bool SDLAudioDriverThread::Execute() {
     while (!shouldTerminate()) {
         semaphore_->Wait();
+        if (shouldTerminate())
+            break;
         driver_->OnNewBufferNeeded();
     };
-    SysSemaphore *semaphore = semaphore_;
-    semaphore_ = 0;
-    delete semaphore;
     return true;
 };
 
@@ -34,9 +49,12 @@ void SDLAudioDriverThread::Notify() {
 void SDLAudioDriverThread::RequestTermination() {
     SysThread::RequestTermination();
     // post to be sure we're not locked
-    semaphore_->Post();
-    // Wait for thread to finish
-    SDL_Delay(10);
+    if (semaphore_)
+        semaphore_->Post();
+    if (threadHandle_) {
+        SDL_WaitThread(threadHandle_, 0);
+        threadHandle_ = 0;
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -72,25 +90,38 @@ bool SDLAudioDriver::InitDriver() {
     fragSize_ = returned.size;
     // Allocates a rotating sound buffer
     unalignedMain_ = (char *)SYS_MALLOC(fragSize_ + SOUND_BUFFER_MAX);
+    if (!unalignedMain_) {
+        Trace::Error("Could not allocate SDL audio buffer");
+        SDL_CloseAudio();
+        return false;
+    }
     // Make sure the buffer is aligned
-#ifdef _64BIT
-    mainBuffer_ = (char *)unalignedMain_;
-#else
-    mainBuffer_ = (char *)((((int)unalignedMain_) + 1) & (0xFFFFFFFC));
-#endif
+    mainBuffer_ = (char *)((((unsigned long)unalignedMain_) + 3) & ~3UL);
 
     Trace::Log("AUDIO", "%s successfully opened with %d samples", bufferName,
                fragSize_ / 4);
 
     // Create mini blank buffer in case of underruns
 
-    miniBlank_ = (char *)malloc(fragSize_);
+    miniBlank_ = (char *)SYS_MALLOC(fragSize_);
+    if (!miniBlank_) {
+        Trace::Error("Could not allocate SDL silence buffer");
+        SYS_FREE(unalignedMain_);
+        unalignedMain_ = 0;
+        mainBuffer_ = 0;
+        SDL_CloseAudio();
+        return false;
+    }
     SYS_MEMSET(miniBlank_, 0, fragSize_);
 
     return true;
 };
 
 void SDLAudioDriver::CloseDriver() {
+
+    if (thread_)
+        StopDriver();
+    SDL_CloseAudio();
 
     if (miniBlank_) {
         SYS_FREE(miniBlank_);
@@ -100,17 +131,20 @@ void SDLAudioDriver::CloseDriver() {
     if (unalignedMain_) {
         SYS_FREE(unalignedMain_);
         unalignedMain_ = 0;
+        mainBuffer_ = 0;
     };
-    SDL_CloseAudio();
 };
 
 bool SDLAudioDriver::StartDriver() {
 
     thread_ = new SDLAudioDriverThread(this);
-    thread_->Start();
+    if (!thread_->StartNative()) {
+        Trace::Error("Could not create SDL audio worker: %s", SDL_GetError());
+        delete thread_;
+        thread_ = 0;
+        return false;
+    }
 
-    short blank[4000];
-    SYS_MEMSET(blank, 0, 4000);
     bufferPos_ = 0;
     bufferSize_ = 0;
 
@@ -130,10 +164,10 @@ bool SDLAudioDriver::StartDriver() {
 
 void SDLAudioDriver::StopDriver() {
     if (thread_) {
-        thread_->RequestTermination();
-        SysThread *thread = thread_;
-        thread_ = 0;
         SDL_PauseAudio(1);
+        thread_->RequestTermination();
+        SDLAudioDriverThread *thread = thread_;
+        thread_ = 0;
         delete thread;
     };
 };
@@ -149,30 +183,58 @@ void SDLAudioDriver::OnChunkDone(Uint8 *stream, int len) {
     while (bufferSize_ - bufferPos_ < len) {
 
         // First move remaining bytes at the front
-        memcpy(mainBuffer_, mainBuffer_ + bufferPos_, bufferSize_ - bufferPos_);
+        memmove(mainBuffer_, mainBuffer_ + bufferPos_,
+                bufferSize_ - bufferPos_);
 
         // then get next queued buffer and copy data from it
 
         if (pool_[poolPlayPosition_].buffer_ == 0) {
-            SYS_MEMCPY(mainBuffer_ + bufferSize_ - bufferPos_, miniBlank_, len);
+            SYS_MEMSET(mainBuffer_ + bufferSize_ - bufferPos_, 0, len);
             bufferSize_ = bufferSize_ - bufferPos_ + len;
 
             bufferPos_ = 0;
         } else {
 
+#if defined(__GNUC__)
+            __sync_synchronize();
+#endif
+            int queuedSize = pool_[poolPlayPosition_].size_;
+            if (queuedSize <= 0 || queuedSize > SOUND_BUFFER_MAX) {
+                Trace::Error("Invalid queued audio buffer size: %d",
+                             queuedSize);
+                pool_[poolPlayPosition_].size_ = 0;
+#if defined(__GNUC__)
+                __sync_synchronize();
+#endif
+                pool_[poolPlayPosition_].buffer_ = 0;
+                poolPlayPosition_ =
+                    (poolPlayPosition_ + 1) % SOUND_BUFFER_COUNT;
+                continue;
+            }
+
             memcpy(mainBuffer_ + bufferSize_ - bufferPos_,
                    pool_[poolPlayPosition_].buffer_,
-                   pool_[poolPlayPosition_].size_);
+                   queuedSize);
 
             MidiService::GetInstance()->Flush();
             // Adapt buffer variables
 
             bufferSize_ =
-                bufferSize_ - bufferPos_ + pool_[poolPlayPosition_].size_;
+                bufferSize_ - bufferPos_ + queuedSize;
             bufferPos_ = 0;
 
+#ifdef PLATFORM_PSP
+#if defined(__GNUC__)
+            __sync_synchronize();
+#endif
+#else
             SYS_FREE(pool_[poolPlayPosition_].buffer_);
+#endif
 
+            pool_[poolPlayPosition_].size_ = 0;
+#if defined(__GNUC__)
+            __sync_synchronize();
+#endif
             pool_[poolPlayPosition_].buffer_ = 0;
             poolPlayPosition_ = (poolPlayPosition_ + 1) % SOUND_BUFFER_COUNT;
             if (thread_)

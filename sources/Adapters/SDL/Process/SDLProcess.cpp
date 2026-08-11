@@ -18,11 +18,13 @@ SysSemaphore *SDLProcessFactory::CreateNewSemaphore(int initialcount, int maxcou
 } ;
 
 SDLSysSemaphore::SDLSysSemaphore(int initialcount,int maxcount) {
-	handle_=SDL_CreateSemaphore(0) ;
+    handle_ = SDL_CreateSemaphore(initialcount);
 } ;
 
 SDLSysSemaphore::~SDLSysSemaphore() {
-	handle_=0 ;
+    if (handle_)
+        SDL_DestroySemaphore(handle_);
+    handle_=0 ;
 } ;
 
 SysSemaphoreResult SDLSysSemaphore::Wait() {

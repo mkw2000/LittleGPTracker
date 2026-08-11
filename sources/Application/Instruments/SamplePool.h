@@ -11,7 +11,8 @@
 
 enum SamplePoolEventType {
 	SPET_INSERT,
-	SPET_DELETE
+	SPET_DELETE,
+	SPET_REPLACE
 } ;
 
 struct SamplePoolEvent: public I_ObservableData {
@@ -41,11 +42,11 @@ public:
   int ImportSample(Path &path);
   bool IsImported(std::string name);
   // int InsertSample(const std::string& sampleName, bool imported, std::string fi);
-  int Reassign(std::string name, bool imported);
+  int Reassign(std::string name);
   void PurgeSample(int i);
   const char *GetSampleLib();
 protected:
-  void unload(int i);
+  WavFile *loadWavSource(const char *path);
   int loadSample(const char *path);
   int loadSoundFont(const char *path);
   int getIndexOf(const char *path);

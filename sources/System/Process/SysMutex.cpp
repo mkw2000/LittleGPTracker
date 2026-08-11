@@ -34,8 +34,9 @@ bool SysMutex::Lock() {
 
 bool SysMutex::TryLock() {
 #ifndef SDL2
-    // SDL1 generally means single-threaded older builds
-    return true;
+    // SDL 1.2 has no portable try-lock API. Blocking briefly is safer than
+    // claiming the lock was acquired and racing the audio callback.
+    return Lock();
 #else
     if (!mutex_) {
         mutex_ = SDL_CreateMutex();

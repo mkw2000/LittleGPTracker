@@ -7,32 +7,37 @@ T_SimpleList<Path::Alias> Path::aliases_(true) ;
 
 using namespace std ;
 
-Path::Path():type_(FT_UNKNOWN),gotType_(false) {
+Path::Path():gotType_(false),type_(FT_UNKNOWN) {
 	path_=(char *)malloc(1) ;
 	strcpy(path_,"") ;
 } ;
 
-Path::Path(const char *path):type_(FT_UNKNOWN),gotType_(false) {
+Path::Path(const char *path):gotType_(false),type_(FT_UNKNOWN) {
 	path_=(char *)malloc((int)strlen(path)+1) ;
 	strcpy(path_,path) ;
 } ;
 
-Path::Path(const std::string &path):type_(FT_UNKNOWN),gotType_(false) {
+Path::Path(const std::string &path):gotType_(false),type_(FT_UNKNOWN) {
 	path_=(char *)malloc(path.size()+1) ;
 	strcpy(path_,path.c_str()) ;
 } ;
 
 Path::Path(const Path &other) {
-	path_=(char *)SYS_MALLOC((int)strlen(other.path_)+1) ;
+	path_=(char *)malloc((int)strlen(other.path_)+1) ;
 	strcpy(path_,other.path_) ;
 	gotType_=other.gotType_;
 	type_=other.type_ ;
 } ;
 
 Path &Path::operator=(const Path &other) {
-	SAFE_FREE(path_) ;
-	path_=(char *)SYS_MALLOC((int)strlen(other.path_)+1) ;
-	strcpy(path_,other.path_) ;
+	if (this==&other) return *this ;
+	char *newPath=(char *)malloc((int)strlen(other.path_)+1) ;
+	if (!newPath) return *this ;
+	strcpy(newPath,other.path_) ;
+	free(path_) ;
+	path_=newPath ;
+	gotType_=other.gotType_ ;
+	type_=other.type_ ;
 	return *this ;
 } ;
 
@@ -83,10 +88,9 @@ Path Path::Descend(const std::string& leaf)
 }
 
 void Path::getType() {
-	if (!gotType_) {
-		gotType_=true ;
-		type_=FileSystem::GetInstance()->GetFileType(path_) ;
-	} ;
+	gotType_=true ;
+	std::string resolved=GetPath() ;
+	type_=FileSystem::GetInstance()->GetFileType(resolved.c_str()) ;
 } ;
 
 std::string Path::GetName() {
@@ -128,8 +132,12 @@ bool Path::Matches(const char *pattern) {
 
 Path Path::GetParent() {
 	std::string current=GetCanonicalPath() ;
-	std::string::size_type index=current.rfind("/",current.size()-2) ;
-	std::string parentPath=current.substr(0,index) ;
+	while (current.size()>1 && current[current.size()-1]=='/')
+		current.erase(current.size()-1) ;
+	std::string::size_type index=current.rfind("/") ;
+	if (index==std::string::npos)
+		return Path("") ;
+	std::string parentPath=(index==0)?"/":current.substr(0,index) ;
 	Path parent(parentPath) ;
 	return parent ;
 }
@@ -183,37 +191,51 @@ int FileSystemService::Copy(const Path &src,const Path &dst)
 {
   const int bufsize=4096;
   char buffer[bufsize];
-  int  count=0;
-  int  nbwrite=-1;
+  int count = 0;
+  int total=0;
 
   FileSystem * fs=FileSystem::GetInstance() ;
-  I_File     * isrc=fs->Open(src.GetPath().c_str(),"r");
-  I_File     * idst=fs->Open(dst.GetPath().c_str(),"w");
+  I_File *isrc = fs->Open(src.GetPath().c_str(), "r");
 
   Trace::Log("FS","FileSystemService::Copy %s to %s",
   src.GetPath().c_str(), dst.GetPath().c_str());
-  if (isrc)
-    Trace::Log("FS","src open ok");
-  else {
-    Trace::Log("FS","src open fail");
-    return nbwrite;
-  }
-  if (idst)
-    Trace::Log("FS","dst open ok");
-  else {
-    Trace::Log("FS","dst open fail");
-    return nbwrite;
+  if (!isrc) {
+      Trace::Error("Could not open copy source %s", src.GetPath().c_str());
+      return -1;
   }
 
-  while (count=isrc->Read(buffer,sizeof(char),bufsize))
-    {
-      idst->Write(buffer,sizeof(char),count);
-      nbwrite++;
-    }
+  I_File *idst=fs->Open(dst.GetPath().c_str(),"w");
+  if (!idst) {
+    Trace::Error("Could not open copy destination %s", dst.GetPath().c_str());
+    isrc->Close();
+    delete isrc;
+    return -1;
+  }
+
+  while ((count = isrc->Read(buffer, sizeof(char), bufsize)) > 0) {
+      int written = idst->Write(buffer, sizeof(char), count);
+      if (written != count) {
+          Trace::Error("Short write copying to %s (%d of %d bytes)",
+                       dst.GetPath().c_str(), written, count);
+          total = -1;
+          break;
+      }
+      total += written;
+  }
+  if (isrc->HasError()) {
+    Trace::Error("Read failed copying from %s",src.GetPath().c_str());
+    total=-1;
+  }
 
   isrc->Close();
   idst->Close();
-  return nbwrite;
+  delete isrc;
+  delete idst;
+
+  if (total<0) {
+    fs->Delete(dst.GetPath().c_str());
+  }
+  return total;
 }
 
 int FileSystemService::Delete(const Path &path) {

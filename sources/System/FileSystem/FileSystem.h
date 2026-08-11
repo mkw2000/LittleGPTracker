@@ -81,6 +81,8 @@ public:
 	virtual void Printf(const char *format,...)=0 ;
 	virtual void Seek(long offset,int whence)=0 ;
 	virtual long Tell()=0 ;
+	virtual bool Flush() { return true; } ;
+	virtual bool HasError() const { return false; } ;
 	virtual void Close()=0 ;
 } ;
 

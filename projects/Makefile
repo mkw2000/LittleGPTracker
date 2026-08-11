@@ -439,6 +439,8 @@ PSPFILES := \
 	SDLTimer.o \
 	PSPSystem.o
 
+PSP_COMMON_EXCLUDES := FxPrinter.o
+
 #---------------------------------------------------------------------------------
 # Windows
 #---------------------------------------------------------------------------------
@@ -499,7 +501,7 @@ export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 #---------------------------------------------------------------------------------
 
 export LD	:=	$(CXX)
-export OFILES	:=	$(COMMONFILES) $($(PLATFORM)FILES) 
+export OFILES	:=	$(filter-out $($(PLATFORM)_COMMON_EXCLUDES),$(COMMONFILES)) $($(PLATFORM)FILES)
 export OBJS := $(OFILES)
 export INCLUDE := \
 	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \

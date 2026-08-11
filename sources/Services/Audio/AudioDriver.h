@@ -11,6 +11,10 @@ struct AudioBufferData {
    char *buffer_ ;
    int size_ ;
    void *driverData_ ;
+#ifdef PLATFORM_PSP
+   char *retainedBuffer_ ;
+   int capacity_ ;
+#endif
 } ;
 
 class AudioDriver: public Observable {

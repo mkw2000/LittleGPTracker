@@ -1,4 +1,5 @@
 #include "FxPrinter.h"
+#include "Application/Player/Player.h"
 #include "Services/Audio/Audio.h"
 
 FxPrinter::FxPrinter(ViewData *viewData)
@@ -39,9 +40,9 @@ std::string FxPrinter::parseCommand() {
                        Audio::GetInstance()->GetSampleRate();
 
     std::ostringstream cm1, cm2, cm3, cm4, cm5;
-    cm1 << ffmpeg_ << " -y -i "
+    cm1 << "\"" << ffmpeg_ << "\" -y -i "
         << "\"" << samples_dir.GetPath() << "/" << fi_ << "\""
-        << " -i " << ir_ << " -filter_complex ";
+        << " -i \"" << ir_ << "\" -filter_complex ";
     // bug in ffmpeg version 4.4.2
     // requires pad_dur to be over 0 or output will be infinitely long
     if (irPad_ > 0) {
@@ -64,14 +65,20 @@ std::string FxPrinter::parseCommand() {
 char *FxPrinter::GetNotification() { return notificationResult_; }
 
 bool FxPrinter::Run() {
+    if (Player::GetInstance()->IsRunning()) {
+        notificationResult_ = "Stop playback before PrintFX";
+        return false;
+    }
     setParams();
     setPaths();
-    // Are we overwriting an already imported sample?
-    bool imported = SamplePool::GetInstance()->IsImported(foWav_);
     std::string cmd = parseCommand();
-    Trace::Log("Processed", cmd.c_str());
+    Trace::Log("Processed", "%s", cmd.c_str());
     if (system(cmd.c_str()) == 0) {
-        int newIndex = SamplePool::GetInstance()->Reassign(foWav_, imported);
+        int newIndex = SamplePool::GetInstance()->Reassign(foWav_);
+        if (newIndex < 0) {
+            notificationResult_ = "FX rendered but reload failed";
+            return false;
+        }
         instrument_->AssignSample(newIndex);
         notificationResult_ = "OK!";
         return true;

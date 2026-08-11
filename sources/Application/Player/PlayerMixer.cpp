@@ -61,7 +61,11 @@ bool PlayerMixer::Start() {
         notes_[i]=0xFF ;
     } ;
 
-	return ms->Start() ;
+	if (!ms->Start()) {
+		ms->RemoveObserver(*this) ;
+		return false ;
+	}
+	return true ;
 } ;
 
 void PlayerMixer::Stop() {

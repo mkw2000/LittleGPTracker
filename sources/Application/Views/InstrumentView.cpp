@@ -316,12 +316,14 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 					}
 					break ;
                 }
+#ifdef FFMPEG_ENABLED
                 case SIP_PRINTFX: {
                     FxPrinter printer(viewData_);
                     isDirty_ = printer.Run();
                     View::SetNotification(printer.GetNotification());
                     break;
                 }
+#endif
                 default:
                     break ;
 			}

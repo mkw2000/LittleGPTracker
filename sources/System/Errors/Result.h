@@ -30,5 +30,7 @@ private:
 	mutable Result *child_ ;
 } ;
 
-#define RETURN_IF_FAILED(r,m) if (r.Failed()) {Result(r,m);}
-#define LOG_IF_FAILED(r,m) if (r.Failed()) { Trace::Log(m) ; Trace::Log(r.GetDescription().c_str()); }
+#define RETURN_IF_FAILED(r,m) \
+	do { if ((r).Failed()) return Result((r), (m)); } while (0)
+#define LOG_IF_FAILED(r,m) \
+	do { if ((r).Failed()) Trace::Error("%s: %s", (m), (r).GetDescription().c_str()); } while (0)

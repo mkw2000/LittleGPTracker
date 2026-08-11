@@ -541,3 +541,89 @@ void LZ_Uncompress( unsigned char *in, unsigned char *out,
     }
     while( inpos < insize );
 }
+
+/*************************************************************************
+* LZ_UncompressSafe() - Bounds-checked decoder for untrusted save data.
+* Returns the output size, or -1 if the stream is malformed.
+*************************************************************************/
+
+static int _LZ_ReadVarSizeSafe( unsigned int *x, const unsigned char *buf,
+    unsigned int available )
+{
+    unsigned int y, b, num_bytes;
+
+    y = 0;
+    num_bytes = 0;
+    do
+    {
+        if( (num_bytes >= available) || (num_bytes >= 5) ||
+            (y > (0xffffffffU >> 7)) )
+        {
+            return -1;
+        }
+        b = (unsigned int) buf[ num_bytes ++ ];
+        y = (y << 7) | (b & 0x0000007f);
+    }
+    while( b & 0x00000080 );
+
+    *x = y;
+    return (int) num_bytes;
+}
+
+int LZ_UncompressSafe( const unsigned char *in, unsigned int insize,
+    unsigned char *out, unsigned int outsize )
+{
+    unsigned char marker, symbol;
+    unsigned int inpos, outpos, length, offset, i;
+    int count;
+
+    if( !in || !out || (insize < 1) )
+    {
+        return -1;
+    }
+
+    marker = in[ 0 ];
+    inpos = 1;
+    outpos = 0;
+
+    while( inpos < insize )
+    {
+        symbol = in[ inpos ++ ];
+        if( symbol != marker )
+        {
+            if( outpos >= outsize ) return -1;
+            out[ outpos ++ ] = symbol;
+            continue;
+        }
+
+        if( inpos >= insize ) return -1;
+        if( in[ inpos ] == 0 )
+        {
+            ++ inpos;
+            if( outpos >= outsize ) return -1;
+            out[ outpos ++ ] = marker;
+            continue;
+        }
+
+        count = _LZ_ReadVarSizeSafe( &length, &in[ inpos ], insize - inpos );
+        if( count < 0 ) return -1;
+        inpos += (unsigned int) count;
+
+        count = _LZ_ReadVarSizeSafe( &offset, &in[ inpos ], insize - inpos );
+        if( count < 0 ) return -1;
+        inpos += (unsigned int) count;
+
+        if( (offset == 0) || (offset > outpos) ||
+            (length > (outsize - outpos)) )
+        {
+            return -1;
+        }
+        for( i = 0; i < length; ++ i )
+        {
+            out[ outpos ] = out[ outpos - offset ];
+            ++ outpos;
+        }
+    }
+
+    return (int) outpos;
+}

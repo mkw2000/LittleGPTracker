@@ -130,6 +130,7 @@ void NewProjectDialog::ProcessButtonMask(unsigned short mask, bool pressed) {
             } else if (ch == '\r') {
                 // END key: exit keyboard mode (same as START)
                 keyboardMode_ = false;
+                selected_ = 2;
                 isDirty_ = true;
                 return;
             } else if (ch != '\0') {
@@ -181,6 +182,7 @@ void NewProjectDialog::ProcessButtonMask(unsigned short mask, bool pressed) {
             return;
         } else if (mask == EPBM_START) {
             keyboardMode_ = false;
+            selected_ = 2;
             isDirty_ = true;
             return;
         }
@@ -210,7 +212,9 @@ void NewProjectDialog::ProcessButtonMask(unsigned short mask, bool pressed) {
                 isDirty_ = true;
                 break;
             case 2:
-                if (currentPath_.Descend(GetName()).Exists()) {
+                if (GetName()=="lgpt_") {
+                    View::SetNotification("Enter a project name", -6);
+                } else if (currentPath_.Descend(GetName()).Exists()) {
                     std::string res("Name " + std::string(name_) + " busy");
                     View::SetNotification(res.c_str(), -6);
                 } else {
@@ -285,14 +289,11 @@ void NewProjectDialog::ProcessButtonMask(unsigned short mask, bool pressed) {
 };
 
 std::string NewProjectDialog::GetName() {
-    for (int i = MAX_NAME_LENGTH; i >= 0; i--) {
-        if (name_[i]==' ') {
-            name_[i] = 0;
-        } else {
-            break;
-        }
-    }
+    std::string entered(name_, MAX_NAME_LENGTH);
+    while (!entered.empty() &&
+           (entered[entered.size()-1]==' ' || entered[entered.size()-1]==0))
+        entered.erase(entered.size()-1);
     std::string name = "lgpt_";
-    name += name_;
+	name += entered;
 	return name;
 }
