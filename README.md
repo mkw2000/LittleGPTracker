@@ -58,5 +58,5 @@ Recommended reading to get you started:
 | MACOS       | YES           | YES          | MAYBE      | Port by [clsource](https://genserver.social/clsource) |
 
 * **MIDI functionality __greatly__ depends on kernel support, please feature request your favourite OS maintainer =)**
-* **Install ffmpeg by following install instructions for your platform [here](https://www.ffmpeg.org/download.html)**
-* **PrintFX requires full ffmpeg. If marked as TBA, it requires a redesign using [libav](https://trac.ffmpeg.org/wiki/Using%20libav*)**
+* **The built-in instrument reverb is rendered natively on this fork; it preserves the source WAV and does not require an external FFmpeg process.**
+* **Use Instrument View's explicit `Render reverb` action after selecting a preset, wet amount, and tail length.**

@@ -1,3 +1,18 @@
+Unreleased — fork work
+    PSP stability and diagnostics
+        * Safe suspend/resume sequencing for SDL audio
+        * PSP crash reports with register, stack, memory, and log breadcrumbs
+        * Previous-session log rotation
+
+    Native instrument reverb
+        * Replaced external FFmpeg PrintFX with native room, hall, spring, and church presets
+        * Added an explicit Render reverb action that preserves the source WAV
+        * Added numbered output names and rendered-sample validation
+
+    Import and persistence hardening
+        * Reuse existing project WAVs during import
+        * Stop preview I/O before importing and guard empty directory selections
+        * Add save breadcrumbs and safer file logging
 
     Migrate W32 to SDL2, removing need for building in vs2008
 
