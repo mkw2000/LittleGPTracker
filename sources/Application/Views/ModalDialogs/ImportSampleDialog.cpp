@@ -16,7 +16,8 @@ static const char *buttonText[3]= {
 	"Exit"	
 } ;
 
-ImportSampleDialog::ImportSampleDialog(View &view):ModalView(view) {
+ImportSampleDialog::ImportSampleDialog(View &view)
+    : ModalView(view), sampleList_(true) {
 	if (!initStatic_) {
 		const char *slpath=SamplePool::GetInstance()->GetSampleLib() ;
 		sampleLib_=Path(slpath) ;
@@ -127,6 +128,8 @@ void ImportSampleDialog::endPreview() {
 
 void ImportSampleDialog::import(Path &element) {
 
+	// Stop preview I/O before copying or selecting the sample.
+	endPreview() ;
 	SamplePool *pool=SamplePool::GetInstance() ;
 	int sampleID=pool->ImportSample(element) ;
 	if (sampleID>=0) {
@@ -143,8 +146,13 @@ void ImportSampleDialog::import(Path &element) {
                                   ? "Maximum number of SoundFonts exceeded"
                               : (sampleID == -SLOAD_ERR_INVALID_DIR)
                                   ? "Invalid directory"
+                              : (sampleID == -SLOAD_ERR_INPUT_FILE)
+                                  ? "Unable to read sample"
+                              : (sampleID == -SLOAD_ERR_OUTPUT_FILE)
+                                  ? "Unable to write project sample"
                                   : "Unable to open file";
-        Trace::Error(err_str);
+        Trace::Error("Sample import failed (%d) for %s: %s", sampleID,
+                     element.GetPath().c_str(), err_str);
         MessageBox *mb = new MessageBox(*this, err_str);
         View::DoModal(mb);
 	};
@@ -164,6 +172,8 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 		if (mask&EPBM_DOWN) warpToNextSample(1) ;
 
 		Path *element = getImportElement();
+		if (!element)
+			return ;
 		setCurrent(element, mask);
 
 		switch(selected_) {
@@ -188,6 +198,8 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 		if (mask&EPBM_UP) warpToNextSample(-1);
 		if (mask&EPBM_DOWN) warpToNextSample(1);
 		Path *element = getImportElement();
+		if (!element)
+			return ;
 		setCurrent(element, mask);
 		if(!element->IsDirectory()) {
 			preview(*element);
@@ -236,6 +248,7 @@ Path* ImportSampleDialog::getImportElement() {
 			return &it->CurrentItem();
 		}
 	}
+	return 0 ;
 }
 
 void ImportSampleDialog::setCurrent(Path *element, unsigned short mask) {
@@ -256,43 +269,46 @@ void ImportSampleDialog::setCurrent(Path *element, unsigned short mask) {
 }
 
 void ImportSampleDialog::setCurrentFolder(Path *path) {
+	if (!path)
+		return ;
 
 	Path formerPath(currentPath_) ;
-
 	topIndex_=0 ;
 	currentSample_=0 ;
-
 	currentPath_=Path(*path) ;
 	sampleList_.Empty() ;
-	if (path) {
-		int count=0 ;
-		I_Dir *dir=FileSystem::GetInstance()->Open(path->GetPath().c_str()) ;	
-		if (dir) {
-			dir->GetContent("*") ;
-			dir->Sort() ;
-			IteratorPtr<Path>it(dir->GetIterator()) ;
-			for (it->Begin();!it->IsDone();it->Next()) {
-				Path &current=it->CurrentItem() ;
-		 		if (current.IsDirectory()) {
-					if (current.GetName().substr(0,1)!="." || current.GetName()=="..") {
-						Path *sample=new Path(current) ;
-						sampleList_.Insert(sample) ;
-						if (!formerPath.Compare(current)) {
-							currentSample_=count ;
-						}
-						count++ ;
-					}
+
+	int count=0 ;
+	I_Dir *dir=FileSystem::GetInstance()->Open(path->GetPath().c_str()) ;
+	if (!dir)
+		return ;
+
+	dir->GetContent("*") ;
+	dir->Sort() ;
+	{
+		IteratorPtr<Path>it(dir->GetIterator()) ;
+		for (it->Begin();!it->IsDone();it->Next()) {
+			Path &current=it->CurrentItem() ;
+			if (current.IsDirectory()) {
+				if (current.GetName().substr(0,1)!="." ||
+				    current.GetName()=="..") {
+					Path *sample=new Path(current) ;
+					sampleList_.Insert(sample) ;
+					if (!formerPath.Compare(current))
+						currentSample_=count ;
+					count++ ;
 				}
 			}
-			for (it->Begin();!it->IsDone();it->Next()) {
-                Path &current = it->CurrentItem();
-                if (!current.IsDirectory()) {
-                                  if ((current.Matches("*.wav") || current.Matches("*.sf2")) && current.GetName()[0]!='.') {
-						Path *sample=new Path(current) ;
-						sampleList_.Insert(sample) ;
-					}
-				};
+		}
+		for (it->Begin();!it->IsDone();it->Next()) {
+			Path &current=it->CurrentItem() ;
+			if (!current.IsDirectory() &&
+			    (current.Matches("*.wav") || current.Matches("*.sf2")) &&
+			    current.GetName()[0]!='.') {
+				Path *sample=new Path(current) ;
+				sampleList_.Insert(sample) ;
 			}
 		}
 	}
+	delete dir ;
 } ;

@@ -196,6 +196,19 @@ WavFile *SamplePool::loadWavSource(const char *path) {
 */
 int SamplePool::ImportSample(Path &path) {
 
+    // Importing a WAV that is already in this project's pool should simply
+    // select the existing sample. The old path overwrote the project copy and
+    // appended a duplicate name, which could fail on PSP or leave two entries
+    // backed by different in-memory data.
+    if (path.Matches("*.wav")) {
+        int existingIndex = getIndexOf(path.GetName().c_str());
+        if (existingIndex >= 0) {
+            Trace::Log("ImportSample", "Reusing imported sample %s",
+                       path.GetName().c_str());
+            return existingIndex;
+        }
+    }
+
     if (count_ == MAX_PIG_SAMPLES)
         return -SLOAD_ERR_MAX_SAMPLES;
 

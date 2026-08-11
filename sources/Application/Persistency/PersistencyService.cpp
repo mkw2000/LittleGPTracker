@@ -14,6 +14,7 @@ PersistencyService::PersistencyService():Service(MAKE_FOURCC('S','V','P','S')) {
 bool PersistencyService::Save(const char *name) {
 
     Path filename(name);
+	Trace::Log("SAVE", "Beginning save to %s", filename.GetPath().c_str());
 
     TiXmlDocument doc(filename.GetPath());
     TiXmlElement first("LITTLEGPTRACKER") ;
@@ -25,12 +26,16 @@ bool PersistencyService::Save(const char *name) {
 	IteratorPtr<SubService> it(GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {
 		Persistent *currentItem=(Persistent *)&it->CurrentItem() ;
+		Trace::Log("SAVE", "Serializing %s", currentItem->GetNodeName());
 		currentItem->Save(node) ;
 	} ;
 
+	Trace::Log("SAVE", "Writing project file");
     bool succeeded = doc.SaveFile();
     if (!succeeded) {
 		Trace::Error("Could not save project to %s", filename.GetPath().c_str());
+	} else {
+		Trace::Log("SAVE", "Save completed");
 	}
 	return succeeded;
 };
