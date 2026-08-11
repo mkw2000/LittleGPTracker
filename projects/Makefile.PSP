@@ -23,4 +23,7 @@ CFLAGS	:=	-O3 -G0 -Wall $(DEFINES) -I$(PWD)/../sources -I$(PSPSDK)/include
 CXXFLAGS:=	$(CFLAGS) -fexceptions -fno-rtti
 LIBS = -L$(PSPDEV)/psp/lib -lSDL_image -lpng -lz -lstdc++ -lSDL -lGL -lGLU -lglut -lm -lc -ljpeg
 LIBS += -lpspvfpu -lpspgu -lpsphprm -lpsprtc -lpspaudio -lpspirkeyb -lpsppower
+# The crash reporter uses pspDebugInstallErrorHandler. Keep pspkernel after
+# pspdebug so its exception-registration stub resolves with static linking.
+LIBS += -lpspdebug -lpspkernel
 EXTENSION:= elf

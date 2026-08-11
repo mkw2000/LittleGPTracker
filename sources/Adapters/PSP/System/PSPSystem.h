@@ -9,8 +9,9 @@ class PSPSystem : public System {
     static bool Boot(int argc, char **argv);
     static void Shutdown();
     static int MainLoop();
+    static bool InitializePowerManagement();
     static void HandlePowerEvent(int powerInfo);
-    static bool ConsumeResumeEvent();
+    static bool ProcessPowerEvents();
 
   public: // System implementation
     virtual unsigned long GetClock();
@@ -28,7 +29,14 @@ class PSPSystem : public System {
   private:
     static std::string eboot_;
     static EventManager *eventManager_;
-    static volatile bool suspended_;
-    static volatile bool resumePending_;
+    enum PowerState {
+        POWER_RUNNING,
+        POWER_SUSPEND_REQUESTED,
+        POWER_SUSPENDED,
+        POWER_RESUME_PENDING
+    };
+    static volatile int powerState_;
+    static int suspendAckSema_;
+    static int resumeSema_;
 };
 #endif

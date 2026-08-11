@@ -223,7 +223,7 @@ W32DIRS     :=  .\
 #---------------------------------------------------------------------------------
 
 COMMONFILES := \
-	Logger.o Trace.o Result.o Status.o Config.o \
+	CrashContext.o Logger.o Trace.o Result.o Status.o Config.o \
 	Timer.o FileSystem.o FontConfig.o \
 	SysMutex.o TimeService.o \
 	MidiOutDevice.o MidiInDevice.o MidiService.o Groove.o \
@@ -259,7 +259,7 @@ COMMONFILES := \
 	char.o n_assert.o fixed.o wildcard.o \
 	SyncMaster.o TablePlayback.o Player.o \
 	Table.o TableView.o\
-	InstrumentBank.o WavFileWriter.o WavFile.o MidiInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
+	InstrumentBank.o WavFileWriter.o WavFile.o MidiInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o NativeReverb.o FxPrinter.o\
 	PersistencyService.o Persistent.o \
 	Observable.o SingletonRegistry.o \
 	Audio.o AudioMixer.o AudioOutDriver.o AudioDriver.o \
@@ -437,9 +437,8 @@ PSPFILES := \
 	SDLAudio.o \
 	SDLProcess.o \
 	SDLTimer.o \
+	PSPCrashHandler.o \
 	PSPSystem.o
-
-PSP_COMMON_EXCLUDES := FxPrinter.o
 
 #---------------------------------------------------------------------------------
 # Windows

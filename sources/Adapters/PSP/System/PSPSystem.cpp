@@ -1,8 +1,10 @@
 
 #include "PSPSystem.h"
+#include "PSPCrashHandler.h"
 #include "Adapters/Dummy/Midi/DummyMidi.h"
 #include "Adapters/PSP/FileSystem/PSPFileSystem.h"
 #include "Adapters/SDL/Audio/SDLAudio.h"
+#include "Adapters/SDL/Audio/SDLAudioDriver.h"
 #include "Adapters/SDL/GUI/GUIFactory.h"
 #include "Adapters/SDL/GUI/SDLEventManager.h"
 #include "Adapters/SDL/GUI/SDLGUIWindowImp.h"
@@ -12,6 +14,7 @@
 #include "System/Console/Logger.h"
 #include <malloc.h>
 #include <pspdebug.h>
+#include <pspiofilemgr.h>
 #include <psppower.h>
 #include <pspthreadman.h>
 #include <stdlib.h>
@@ -19,8 +22,9 @@
 #include <time.h>
 
 EventManager *PSPSystem::eventManager_ = NULL ;
-volatile bool PSPSystem::suspended_ = false;
-volatile bool PSPSystem::resumePending_ = false ;
+volatile int PSPSystem::powerState_ = PSPSystem::POWER_RUNNING;
+int PSPSystem::suspendAckSema_ = -1;
+int PSPSystem::resumeSema_ = -1;
 
 int PSPSystem::MainLoop() 
 {
@@ -41,6 +45,8 @@ bool PSPSystem::Boot(int argc,char **argv) {
 
 	Path bootPath(argv[0]) ;
 	Path parent=bootPath.GetParent() ;
+	bool crashHandlerInstalled =
+	    PSPCrashHandler::Install(parent.GetPath().c_str());
 
 	Path::SetAlias("bin",parent.GetPath().c_str()) ;
 	Path::SetAlias("root",parent.GetPath().c_str()) ;
@@ -48,11 +54,21 @@ bool PSPSystem::Boot(int argc,char **argv) {
 	Config::GetInstance()->ProcessArguments(argc,argv) ;
 
   Path logPath("bin:lgpt.log");
+  // Preserve one prior session so rebooting after a crash does not immediately
+  // destroy the application breadcrumbs needed to diagnose it.
+  Path previousLogPath("bin:lgpt-prev.log");
+  sceIoRemove(previousLogPath.GetPath().c_str());
+  sceIoRename(logPath.GetPath().c_str(), previousLogPath.GetPath().c_str());
   FileLogger *fileLogger=new FileLogger(logPath);
   if(fileLogger->Init().Succeeded())
   {
     Trace::GetInstance()->SetLogger(*fileLogger);    
   }
+	if (crashHandlerInstalled)
+		Trace::Log("PSP", "Crash reports enabled at %s",
+		           PSPCrashHandler::GetReportPath());
+	else
+		Trace::Error("Could not install PSP crash reporter");
 	 
 	// Install GUI Factory
 	I_GUIWindowFactory::Install(new GUIFactory()) ;
@@ -112,22 +128,68 @@ bool PSPSystem::Boot(int argc,char **argv) {
 void PSPSystem::Shutdown() {
 } ;
 
-void PSPSystem::HandlePowerEvent(int powerInfo) {
-    if (powerInfo & PSP_POWER_CB_SUSPENDING) {
-        suspended_ = true;
-        resumePending_ = false;
-    }
-
-    if ((powerInfo & PSP_POWER_CB_RESUME_COMPLETE) && suspended_)
-        resumePending_ = true;
-}
-
-bool PSPSystem::ConsumeResumeEvent() {
-    if (!resumePending_)
+bool PSPSystem::InitializePowerManagement() {
+    powerState_ = POWER_RUNNING;
+    suspendAckSema_ = sceKernelCreateSema("LGPT suspend ack", 0, 0, 1, NULL);
+    if (suspendAckSema_ < 0)
         return false;
 
-    resumePending_ = false;
-    suspended_ = false;
+    resumeSema_ = sceKernelCreateSema("LGPT resume", 0, 0, 1, NULL);
+    if (resumeSema_ < 0) {
+        sceKernelDeleteSema(suspendAckSema_);
+        suspendAckSema_ = -1;
+        return false;
+    }
+    return true;
+}
+
+void PSPSystem::HandlePowerEvent(int powerInfo) {
+    const int suspendFlags =
+        PSP_POWER_CB_POWER_SWITCH | PSP_POWER_CB_SUSPENDING;
+    const int resumeFlags =
+        PSP_POWER_CB_RESUMING | PSP_POWER_CB_RESUME_COMPLETE;
+    if (powerInfo & suspendFlags) {
+        if (__sync_bool_compare_and_swap(&powerState_, POWER_RUNNING,
+                                         POWER_SUSPEND_REQUESTED)) {
+            // SDL teardown belongs to the main thread. Keep this callback
+            // blocked until that teardown has completed so the PSP cannot
+            // enter suspend with its audio channel still active.
+            if (suspendAckSema_ >= 0)
+                sceKernelWaitSema(suspendAckSema_, 1, NULL);
+        }
+    }
+
+    else if (powerInfo & resumeFlags) {
+        if (__sync_bool_compare_and_swap(&powerState_, POWER_SUSPENDED,
+                                         POWER_RESUME_PENDING) &&
+            resumeSema_ >= 0)
+            sceKernelSignalSema(resumeSema_, 1);
+    }
+}
+
+bool PSPSystem::ProcessPowerEvents() {
+    if (powerState_ != POWER_SUSPEND_REQUESTED)
+        return false;
+
+    bool audioSuspended = SDLAudioDriver::SuspendForPowerEvent();
+    powerState_ = POWER_SUSPENDED;
+#if defined(__GNUC__)
+    __sync_synchronize();
+#endif
+    if (suspendAckSema_ >= 0)
+        sceKernelSignalSema(suspendAckSema_, 1);
+
+    // The power callback can now return and let the PSP sleep. Keep the main
+    // thread entirely outside SDL until the resume callback wakes it.
+    if (resumeSema_ >= 0)
+        sceKernelWaitSema(resumeSema_, 1, NULL);
+
+    bool audioResumed = SDLAudioDriver::ResumeFromPowerEvent();
+    powerState_ = POWER_RUNNING;
+    if (!audioSuspended)
+        Trace::Error("Could not suspend PSP audio cleanly");
+    if (!audioResumed)
+        Trace::Error("Could not restore PSP audio after resume");
     return true;
 }
 

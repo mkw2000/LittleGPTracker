@@ -1,4 +1,5 @@
 #include "System/System/System.h"
+#include "CrashContext.h"
 #include "Trace.h"
 #include <stdio.h>
 #include <stdarg.h>
@@ -15,6 +16,7 @@ Trace::Trace()
 
 void Trace::AddLine(const char* line)
 {
+  CrashContext::Set(line);
   if (logger_)
   {
     logger_->AddLine(line);    

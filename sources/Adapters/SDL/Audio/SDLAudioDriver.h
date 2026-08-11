@@ -38,15 +38,31 @@ public:
 	// Additional
 	void OnChunkDone(Uint8 *stream,int len) ;
 
+#ifdef PLATFORM_PSP
+    static bool SuspendForPowerEvent();
+    static bool ResumeFromPowerEvent();
+#endif
+
 private:
-  int fragSize_ ;  // Actual fragsize used by the driver
-  char *unalignedMain_ ;
-  char *mainBuffer_ ;
-  char *miniBlank_ ;
-  int bufferPos_ ;
-  int bufferSize_ ;
-  SDLAudioDriverThread *thread_ ;
-	Uint32 startTime_ ;
+    void ReleaseDeviceBuffers();
+#ifdef PLATFORM_PSP
+    bool suspendForPowerEvent();
+    bool resumeFromPowerEvent();
+    static SDLAudioDriver *activeDriver_;
+#endif
+
+    int fragSize_ ;  // Actual fragsize used by the driver
+    char *unalignedMain_ ;
+    char *mainBuffer_ ;
+    char *miniBlank_ ;
+    int bufferPos_ ;
+    int bufferSize_ ;
+    SDLAudioDriverThread *thread_ ;
+    Uint32 startTime_ ;
+    double streamTimeOffset_;
+    bool audioOpen_;
+    bool powerSuspended_;
+    bool resumePlaying_;
 } ;
 
 

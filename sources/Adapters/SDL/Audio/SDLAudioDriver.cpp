@@ -63,16 +63,38 @@ SDLAudioDriver::SDLAudioDriver(AudioSettings &settings)
     : AudioDriver(settings), unalignedMain_(0), miniBlank_(0) {
     isPlaying_ = false;
     thread_ = 0;
+    mainBuffer_ = 0;
+    startTime_ = 0;
+    streamTimeOffset_ = 0.0;
+    audioOpen_ = false;
+    powerSuspended_ = false;
+    resumePlaying_ = false;
+#ifdef PLATFORM_PSP
+    activeDriver_ = this;
+#endif
 }
 
-SDLAudioDriver::~SDLAudioDriver() {}
+SDLAudioDriver::~SDLAudioDriver() {
+#ifdef PLATFORM_PSP
+    if (activeDriver_ == this)
+        activeDriver_ = 0;
+#endif
+}
+
+#ifdef PLATFORM_PSP
+SDLAudioDriver *SDLAudioDriver::activeDriver_ = 0;
+#endif
 
 struct SDL_AudioSpec input;
 struct SDL_AudioSpec returned;
 
 bool SDLAudioDriver::InitDriver() {
+	if (audioOpen_)
+		return true;
 
     // set sound
+	SYS_MEMSET(&input, 0, sizeof(input));
+	SYS_MEMSET(&returned, 0, sizeof(returned));
     input.freq = 44100;
     input.format = AUDIO_S16SYS;
     input.channels = 2;
@@ -84,6 +106,16 @@ bool SDLAudioDriver::InitDriver() {
         Trace::Error("Couldn't open sdl audio: %s\n", SDL_GetError());
         return false;
     }
+	audioOpen_ = true;
+
+	if (returned.freq != input.freq || returned.format != input.format ||
+		returned.channels != input.channels || returned.size == 0 ||
+		returned.size > SOUND_BUFFER_MAX) {
+		Trace::Error("Unsupported SDL audio format after open");
+		SDL_CloseAudio();
+		audioOpen_ = false;
+		return false;
+	}
     char bufferName[256];
     SDL_AudioDriverName(bufferName, 256);
 
@@ -93,6 +125,7 @@ bool SDLAudioDriver::InitDriver() {
     if (!unalignedMain_) {
         Trace::Error("Could not allocate SDL audio buffer");
         SDL_CloseAudio();
+		audioOpen_ = false;
         return false;
     }
     // Make sure the buffer is aligned
@@ -110,6 +143,7 @@ bool SDLAudioDriver::InitDriver() {
         unalignedMain_ = 0;
         mainBuffer_ = 0;
         SDL_CloseAudio();
+		audioOpen_ = false;
         return false;
     }
     SYS_MEMSET(miniBlank_, 0, fragSize_);
@@ -118,11 +152,19 @@ bool SDLAudioDriver::InitDriver() {
 };
 
 void SDLAudioDriver::CloseDriver() {
+    isPlaying_ = false;
+    StopDriver();
+    if (audioOpen_) {
+        SDL_CloseAudio();
+        audioOpen_ = false;
+    }
+    ReleaseDeviceBuffers();
+    powerSuspended_ = false;
+    resumePlaying_ = false;
+    streamTimeOffset_ = 0.0;
+};
 
-    if (thread_)
-        StopDriver();
-    SDL_CloseAudio();
-
+void SDLAudioDriver::ReleaseDeviceBuffers() {
     if (miniBlank_) {
         SYS_FREE(miniBlank_);
         miniBlank_ = 0;
@@ -133,7 +175,7 @@ void SDLAudioDriver::CloseDriver() {
         unalignedMain_ = 0;
         mainBuffer_ = 0;
     };
-};
+}
 
 bool SDLAudioDriver::StartDriver() {
 
@@ -156,24 +198,91 @@ bool SDLAudioDriver::StartDriver() {
         thread_->Notify();
     }
 
-    SDL_PauseAudio(0);
+    if (!powerSuspended_)
+        streamTimeOffset_ = 0.0;
     startTime_ = SDL_GetTicks();
+    SDL_PauseAudio(0);
 
     return 1;
 };
 
 void SDLAudioDriver::StopDriver() {
-    if (thread_) {
-        SDL_PauseAudio(1);
-        thread_->RequestTermination();
-        SDLAudioDriverThread *thread = thread_;
-        thread_ = 0;
-        delete thread;
-    };
+    SDL_PauseAudio(1);
+    if (!thread_)
+        return;
+
+    // SDL_PauseAudio only changes a flag. Fence any callback which already
+    // entered OnChunkDone before detaching the worker it may notify.
+    if (audioOpen_)
+        SDL_LockAudio();
+    SDLAudioDriverThread *thread = thread_;
+    thread_ = 0;
+    if (audioOpen_)
+        SDL_UnlockAudio();
+
+    thread->RequestTermination();
+    delete thread;
 };
 
+#ifdef PLATFORM_PSP
+bool SDLAudioDriver::SuspendForPowerEvent() {
+    return activeDriver_ ? activeDriver_->suspendForPowerEvent() : true;
+}
+
+bool SDLAudioDriver::ResumeFromPowerEvent() {
+    return activeDriver_ ? activeDriver_->resumeFromPowerEvent() : true;
+}
+
+bool SDLAudioDriver::suspendForPowerEvent() {
+    if (powerSuspended_)
+        return true;
+
+    resumePlaying_ = isPlaying_;
+    if (resumePlaying_)
+        streamTimeOffset_ = GetStreamTime();
+    isPlaying_ = false;
+    hasData_ = false;
+    StopDriver();
+
+    // Closing SDL joins its PSP audio thread and releases the hardware
+    // channel. Merely pausing SDL would continue submitting silent buffers.
+    if (audioOpen_) {
+        SDL_CloseAudio();
+        audioOpen_ = false;
+    }
+    ReleaseDeviceBuffers();
+    bufferPos_ = 0;
+    bufferSize_ = 0;
+    powerSuspended_ = true;
+    return true;
+}
+
+bool SDLAudioDriver::resumeFromPowerEvent() {
+    if (!powerSuspended_)
+        return true;
+
+    bool shouldRestart = resumePlaying_;
+    resumePlaying_ = false;
+    if (!InitDriver()) {
+        powerSuspended_ = false;
+        return false;
+    }
+
+    if (shouldRestart && !AudioDriver::Start()) {
+        SDL_CloseAudio();
+        audioOpen_ = false;
+        ReleaseDeviceBuffers();
+        powerSuspended_ = false;
+        return false;
+    }
+
+    powerSuspended_ = false;
+    return true;
+}
+#endif
+
 double SDLAudioDriver::GetStreamTime() {
-    return (SDL_GetTicks() - startTime_) / 1000.0;
+    return streamTimeOffset_ + (SDL_GetTicks() - startTime_) / 1000.0;
 }
 
 void SDLAudioDriver::OnChunkDone(Uint8 *stream, int len) {

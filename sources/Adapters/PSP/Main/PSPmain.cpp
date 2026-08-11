@@ -39,6 +39,8 @@ int callbackThread(SceSize args, void *argp) {
 /* Sets up the callback thread and returns its thread id */
 int setupCallbacks(void) {
     int thid = 0;
+    if (!PSPSystem::InitializePowerManagement())
+        return -1;
 
     thid = sceKernelCreateThread("callback_thread", callbackThread, 0x11,
                                  0x1000, 0, 0);
@@ -54,12 +56,6 @@ int setupCallbacks(void) {
 
 int main(int argc,char *argv[]) 
 {
-
-	if (setupCallbacks()<0) {
-		sceKernelExitGame();
-		return 1;
-	}
-
 	if (!PSPSystem::Boot(argc,argv)) {
 		sceKernelExitGame();
 		return 1;
@@ -70,6 +66,12 @@ int main(int argc,char *argv[])
 	params.cacheFonts_=false ;
     params.framebuffer_=false ;
 	if (!Application::GetInstance()->Init(params)) {
+		sceKernelExitGame();
+		return 1;
+	}
+	// The power callback waits for the event loop to acknowledge suspend.
+	// Register it only after the application and audio device are ready.
+	if (setupCallbacks()<0) {
 		sceKernelExitGame();
 		return 1;
 	}

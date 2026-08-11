@@ -89,7 +89,7 @@ int SDLEventManager::MainLoop()
 	{
 		SDL_Event event;
 #ifdef PLATFORM_PSP
-		if (PSPSystem::ConsumeResumeEvent())
+		if (PSPSystem::ProcessPowerEvents())
 			sdlWindow->ProcessResume() ;
 		if (!SDL_PollEvent(&event)) {
 			SDL_Delay(5) ;
