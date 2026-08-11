@@ -1,12 +1,12 @@
 #ifndef _INSTRUMENT_VIEW_H_
 #define _INSTRUMENT_VIEW_H_
 
-#ifdef FFMPEG_ENABLED
 #include "Application/FX/FxPrinter.h"
-#endif
 #include "BaseClasses/FieldView.h"
 #include "Foundation/Observable.h"
 #include "ViewData.h"
+
+class UIActionField;
 
 class InstrumentView: public FieldView, public I_Observer {
 public:
@@ -30,5 +30,8 @@ private:
 	Project *project_ ;
 	FourCC lastFocusID_ ;
 	I_Instrument *current_ ;
+	UIActionField *reverbApply_ ;
+	bool renderingReverb_ ;
+	bool reverbRefreshPending_ ;
 } ;
 #endif

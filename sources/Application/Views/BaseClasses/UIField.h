@@ -15,6 +15,9 @@ public:
 	virtual void ProcessArrow(unsigned short mask)=0 ;
 	virtual void OnBClick() {} ; // B depressed
 	virtual void ProcessBArrow(unsigned short mask) {} ;
+	// Non-variable fields return zero. This lets views inspect mixed field
+	// lists without casting action/static controls to UIIntVarField.
+	virtual FourCC GetVariableID() { return 0 ; } ;
 	void SetFocus() ;
 	void ClearFocus() ;
 	bool HasFocus() ;
@@ -30,4 +33,3 @@ protected:
 	bool focus_ ;
 } ;
 #endif
-

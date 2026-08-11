@@ -118,10 +118,10 @@ SampleInstrument::SampleInstrument() {
 	 fbMix_=new Variable("feedback mix",SIP_FBMIX,0x00) ;
 	 Insert(fbMix_) ;
 
-     printFx_ = new Variable("print fx", SIP_PRINTFX, fxPresets, 4, 3);
+     printFx_ = new Variable("reverb", SIP_PRINTFX, fxPresets, 4, 3);
      Insert(printFx_);
 
-     irPad_ = new Variable("pad with silence", SIP_IR_PAD, 0);
+     irPad_ = new Variable("reverb tail", SIP_IR_PAD, 1000);
      Insert(irPad_);
 
      irWet_ = new Variable("effect amount", SIP_IR_WET, 45);
@@ -996,6 +996,18 @@ void SampleInstrument::AssignSample(int i) {
 
 	 Variable *v=FindVariable(SIP_SAMPLE) ;
 	 v->SetInt(i) ;
+} ;
+
+bool SampleInstrument::AssignSampleImmediate(int i) {
+	SamplePool *pool=SamplePool::GetInstance() ;
+	if (i<0 || i>=pool->GetNameListSize()) return false ;
+
+	AssignSample(i) ;
+	// Sample selection normally defers this while a voice is marked running.
+	// PrintFX only calls this with playback stopped, so refresh synchronously;
+	// running_ can otherwise remain stale after a one-shot finishes naturally.
+	updateInstrumentData(false) ;
+	return source_==pool->GetSource(i) ;
 } ;
 
 int SampleInstrument::GetSampleIndex() {

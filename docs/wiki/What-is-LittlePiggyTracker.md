@@ -349,21 +349,12 @@ To move from one screen to the other, press the RTrigger combined with the direc
 ![](https://web.archive.org/web/20190321005749im_/http://wiki.littlegptracker.com/lib/exe/fetch.php?media=screen:instrument_1.3n.png)
 
 - **sample:** selects the .wav file to associate with the instrument. you can select the same sample in more than one instrument. if you tap A,A here it will take you to the Sample Import Screen (which lets you load new .WAV into your project).
-- **FX selector:** Select between 4 impulse responses to print to the currently selected sample
-- **Wet:** How much of the effect to print 0 = nothing, 10 = probably too much
-- **Pad** For short samples, add up to 5000 ms silence to the end of the sample to let the reverb tail ring out.
-FX section requires full ffmpeg to process audio and is currently only available for certain platforms
-If it doesn't appear to do anything, check lgpt.log for hints as to why it doesn't do what you expect it to do!
-Select which reverb you want by holding A+Left/Right. Apply it by double-tapping A
-Reverbs created by using ffmpegs convolution filter [Impulse response](https://en.wikipedia.org/wiki/Convolution)
-Convolution wraps the audio file from start to end. If the sample is very short, you can get
-a longer reverb tail by setting the pad parameter.
-If applied to the sample Kick.wav the audio file with reverb applied will be called Kick_.wav
-IR credits:
-    Room by [Uzbanur](https://freesound.org/people/Uzbazur/sounds/382907/)
-    Hall by [NoiseCollector](https://freesound.org/people/NoiseCollector/sounds/184127/)
-    Spring by [recordinghopkins](https://freesound.org/people/recordinghopkins/sounds/175302/)
-    Church by [jotarrl](https://freesound.org/people/jotarrl/sounds/725443/)
+- **Reverb:** Select between room, hall, spring, and church reverb presets.
+- **Wet:** Sets how much reverb is mixed into the rendered sample, from 0% to 100%.
+- **Tail:** Adds up to 5000 ms for the reverb to ring out after the source sample ends.
+- **Render reverb:** Renders the selected settings to a new WAV and assigns that WAV to the current instrument. Stop playback before rendering.
+
+Select a preset with A+Left/Right, adjust Wet and Tail, then move to Render reverb and press A. The original WAV is preserved; repeated renders receive numbered filenames rather than overwriting an existing file.
 
 - **volume:**
 - **pan:** pans the instrument left or right (0x7F is center)
