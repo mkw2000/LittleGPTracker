@@ -7,7 +7,9 @@ This branch is the durable home for the LittleGPTracker work that was previously
 - Branch: `codex/littlegptracker-stability-reverb`
 - Base: upstream `master` at `877cd7a`
 - Existing local baseline retained: `f861237` (`Fix PSP stability and project persistence`)
-- Intended personal fork: `mkw2000/LittleGPTracker`
+- Personal fork: `mkw2000/LittleGPTracker`
+- Source fork remote: `djdiskmachine/LittleGPTracker` (`djdiskmachine`)
+- Original project remote: `Mdashdotdashn/LittleGPTracker` (`upstream`)
 
 The existing baseline commit is kept intact. Follow-up work is grouped by behavior so each commit can be reviewed, reverted, or cherry-picked independently.
 
