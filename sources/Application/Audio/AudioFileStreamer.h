@@ -24,6 +24,8 @@ protected:
 	WavFile *wav_ ;
 	int position_ ;
 	int shift_ ;
+	int bufferStart_ ;
+	int bufferSize_ ;
 } ;
 
 #endif 

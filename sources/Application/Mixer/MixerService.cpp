@@ -104,11 +104,15 @@ void MixerService::SetRenderMode(int mode) {
 bool MixerService::IsRendering() { return isRendering_; }
 
 bool MixerService::Start() {
-    MidiService::GetInstance()->Start();
-    if (out_) {
-        out_->AddObserver(*this);
-        out_->Start();
-     }
+    if (!out_ || !MidiService::GetInstance()->Start())
+        return false;
+
+    out_->AddObserver(*this);
+    if (!out_->Start()) {
+        out_->RemoveObserver(*this);
+        MidiService::GetInstance()->Stop();
+        return false;
+    }
 	return true ;
 } ;
 

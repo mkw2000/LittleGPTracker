@@ -9,6 +9,7 @@ public:
 	Persistent(const char *nodeName) ;
 	void Save(TiXmlNode *node) ;
 	bool Restore(TiXmlElement *element) ;
+	const char *GetNodeName() const { return nodeName_ ; } ;
 protected:
 	virtual void SaveContent(TiXmlNode *node)=0 ;
 	virtual void RestoreContent(TiXmlElement *element)=0 ;

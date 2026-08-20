@@ -4,13 +4,14 @@
 #include "System/Console/n_assert.h"
 
 bool SysThread::Start() {
+    shouldTerminate_ = false;
+    isFinished_=false ;
 	return SysProcessFactory::GetInstance()->BeginThread(*this) ;
 } ;
 
 bool SysThread::startExecution() {
-	isFinished_=false ;
-	shouldTerminate_=false ;
-	bool result=false ;
+    isFinished_ = false;
+    bool result=false ;
 	try {
 			result=Execute() ;
 	} catch (...) {
@@ -35,5 +36,4 @@ void SysThread::RequestTermination() {
 
 SysSemaphore *SysSemaphore::Create(int initialcount,int maxcount) {
 	return SysProcessFactory::GetInstance()->CreateNewSemaphore(initialcount,maxcount) ;
-} ;
-
+};

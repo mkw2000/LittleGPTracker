@@ -24,7 +24,18 @@ AudioOutDriver::~AudioOutDriver() {
 bool AudioOutDriver::Init() {
 	primarySoundBuffer_=(fixed *)SYS_MALLOC(MIX_BUFFER_SIZE*sizeof(fixed)/2) ;
 	mixBuffer_=(short *)SYS_MALLOC(MIX_BUFFER_SIZE) ;
-    return driver_->Init();
+    if (!primarySoundBuffer_ || !mixBuffer_) {
+        Trace::Error("Could not allocate audio mix buffers") ;
+        SAFE_FREE(primarySoundBuffer_) ;
+        SAFE_FREE(mixBuffer_) ;
+        return false ;
+    }
+    if (!driver_->Init()) {
+        SAFE_FREE(primarySoundBuffer_) ;
+        SAFE_FREE(mixBuffer_) ;
+        return false ;
+    }
+    return true;
 } ;
 
 void AudioOutDriver::Close() {
@@ -43,10 +54,12 @@ void AudioOutDriver::Stop() {
 }
 
 void AudioOutDriver::Trigger() {
-
-	TimeService *ts=TimeService::GetInstance() ;
-
     prepareMixBuffers();
+    const int maximumSampleCount = MIX_BUFFER_SIZE / (2 * sizeof(short));
+    if (sampleCount_ <= 0 || sampleCount_ > maximumSampleCount) {
+        Trace::Error("Invalid mixer slice size: %d samples", sampleCount_);
+        return;
+    }
     hasSound_=AudioMixer::Render(primarySoundBuffer_,sampleCount_) ;
     clipToMix();
     driver_->AddBuffer(mixBuffer_,sampleCount_) ;

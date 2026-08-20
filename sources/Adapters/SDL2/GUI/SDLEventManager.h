@@ -24,9 +24,18 @@ public:
 	virtual int GetKeyCode(const char *name) ;
 
 private:
+	bool openDevice(int deviceIndex) ;
+	void closeDevice(int slot) ;
+	int findSlot(SDL_JoystickID instanceID) const ;
+	int findFreeSlot() const ;
+	void createSources(int slot) ;
+	void setControllerAxis(int slot,SDL_GameControllerAxis axis,Sint16 value) ;
+
 	static bool finished_ ;
 	static bool dumpEvent_ ;
 	SDL_Joystick *joystick_[MAX_JOY_COUNT];
+	SDL_GameController *controller_[MAX_JOY_COUNT];
+	SDL_JoystickID joystickInstance_[MAX_JOY_COUNT];
 	ButtonControllerSource *buttonCS_[MAX_JOY_COUNT] ;
 	JoystickControllerSource *joystickCS_[MAX_JOY_COUNT] ;
 	HatControllerSource *hatCS_[MAX_JOY_COUNT] ;

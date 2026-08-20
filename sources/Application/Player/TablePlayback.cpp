@@ -1,6 +1,7 @@
 #include "TablePlayback.h"
 #include "Application/Instruments/CommandList.h"
 #include "Application/Instruments/I_Instrument.h"
+#include "Application/Player/Player.h"
 
 TablePlayback TablePlayback::playback_[SONG_CHANNEL_COUNT] ;
 
@@ -169,8 +170,8 @@ void TablePlayback::ProcessStep(TablePlayerChange &tpc) {
 				if (automated_) {
 					TableSaveState state ;
 					instrument_->GetTableState(state) ;
-					memcpy(hopCount_,state.hopCount_,sizeof(uchar)*TABLE_STEPS*2) ;
-					memcpy(position_,state.position_,sizeof(int)*2) ;
+					memcpy(hopCount_,state.hopCount_,sizeof(uchar)*TABLE_STEPS*3) ;
+					memcpy(position_,state.position_,sizeof(int)*3) ;
 				}
 
 				// try local processing for if it changes current table or position
@@ -179,9 +180,24 @@ void TablePlayback::ProcessStep(TablePlayerChange &tpc) {
 				hopped_[1]=ProcessLocalCommand(1,table_->cmd2_,table_->param2_,tpc) ;
 				hopped_[2]=ProcessLocalCommand(2,table_->cmd3_,table_->param3_,tpc) ;
 
-				instrument_->ProcessCommand(channel_,table_->cmd1_[position_[0]],table_->param1_[position_[0]]) ;
-				instrument_->ProcessCommand(channel_,table_->cmd2_[position_[1]],table_->param2_[position_[1]]) ;
-				instrument_->ProcessCommand(channel_,table_->cmd3_[position_[2]],table_->param3_[position_[2]]) ;
+				FourCC commands[3] = {
+					table_->cmd1_[position_[0]],
+					table_->cmd2_[position_[1]],
+					table_->cmd3_[position_[2]]
+				};
+				ushort parameters[3] = {
+					table_->param1_[position_[0]],
+					table_->param2_[position_[1]],
+					table_->param3_[position_[2]]
+				};
+				Player *player = Player::GetInstance();
+				for (int row=0;row<3;row++) {
+					if (!player->ProcessFXCommand(channel_,commands[row],
+					                              parameters[row])) {
+						instrument_->ProcessCommand(channel_,commands[row],
+						                            parameters[row]);
+					}
+				}
 
 				previous_[0]=position_[0] ;
 				previous_[1]=position_[1] ;
@@ -217,4 +233,3 @@ void TablePlayback::ProcessStep(TablePlayerChange &tpc) {
 		}
 	}
 }
-

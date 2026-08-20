@@ -6,6 +6,8 @@
 #include "Foundation/Observable.h"
 #include "ViewData.h"
 
+class UIActionField;
+
 class InstrumentView: public FieldView, public I_Observer {
 public:
 	InstrumentView(GUIWindow &w,ViewData *data) ;
@@ -28,5 +30,8 @@ private:
 	Project *project_ ;
 	FourCC lastFocusID_ ;
 	I_Instrument *current_ ;
+	UIActionField *reverbApply_ ;
+	bool renderingReverb_ ;
+	bool reverbRefreshPending_ ;
 } ;
 #endif

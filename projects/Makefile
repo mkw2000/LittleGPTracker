@@ -112,6 +112,19 @@ STEAMDIRS := $(LINUXDIRS) $(JACKDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDLDIRS)
 X64DIRS := $(LINUXDIRS) $(RTMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
 X86DIRS := $(LINUXDIRS) $(RTMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
 
+MACOSDIRS := \
+	../sources/Adapters/MacOS/MacOSMain \
+	../sources/Adapters/MacOS/MacOSSystem \
+	../sources/Adapters/Unix/FileSystem \
+	../sources/Adapters/Unix/Process \
+	../sources/System/Process \
+	../sources/Adapters/SDL2/GUI \
+	../sources/Adapters/SDL2/Timer \
+	../sources/Adapters/RTAudio \
+	../sources/Adapters/RTMidi \
+	../sources/Externals/RTAudio \
+	../sources/Externals/RtMidi
+
 #---------------------------------------------------------------------------------
 # Consoles/Embedded
 #---------------------------------------------------------------------------------
@@ -259,7 +272,7 @@ COMMONFILES := \
 	char.o n_assert.o fixed.o wildcard.o \
 	SyncMaster.o TablePlayback.o Player.o \
 	Table.o TableView.o\
-	InstrumentBank.o WavFileWriter.o WavFile.o MidiInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
+	InstrumentBank.o WavFileWriter.o WavFile.o MidiInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o NativeReverb.o TrackFx.o FxPrinter.o\
 	PersistencyService.o Persistent.o \
 	Observable.o SingletonRegistry.o \
 	Audio.o AudioMixer.o AudioOutDriver.o AudioDriver.o \
@@ -330,6 +343,19 @@ RG35XXPLUSFILES := $(LINUXFILES) $(SDLAUDIOFILES) $(DUMMYMIDIFILES)
 STEAMFILES := $(LINUXFILES) $(RTAUDIOFILES) $(RTMIDIFILES) $(JACKFILES)
 X64FILES := $(LINUXFILES) $(RTMIDIFILES) $(SDLAUDIOFILES)
 X86FILES := $(LINUXFILES) $(RTMIDIFILES) $(SDLAUDIOFILES)
+
+MACOSFILES := \
+	MacOSmain.o \
+	MacOSSystem.o \
+	UnixFileSystem.o \
+	Process.o \
+	UnixProcess.o \
+	GUIFactory.o \
+	SDLGUIWindowImp.o \
+	SDLEventManager.o \
+	SDLTimer.o \
+	$(RTAUDIOFILES) \
+	$(RTMIDIFILES)
 
 #---------------------------------------------------------------------------------
 # Consoles/Embedded
@@ -463,7 +489,11 @@ W32FILES := \
 # INCLUDES is a list of directories containing extra header files
 #---------------------------------------------------------------------------------
 
+ifeq ($(PLATFORM),MACOS)
+TARGET		:=	LittleGPTracker
+else
 TARGET		:=	$(TITLE)
+endif
 BUILD		:=	build$(PLATFORM)
 SOURCES		:=	$($(PLATFORM)DIRS) $(COMMONDIRS)
 INCLUDES	:=
@@ -499,7 +529,7 @@ export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 #---------------------------------------------------------------------------------
 
 export LD	:=	$(CXX)
-export OFILES	:=	$(COMMONFILES) $($(PLATFORM)FILES) 
+export OFILES	:=	$(filter-out $($(PLATFORM)_COMMON_EXCLUDES),$(COMMONFILES)) $($(PLATFORM)FILES)
 export OBJS := $(OFILES)
 export INCLUDE := \
 	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \

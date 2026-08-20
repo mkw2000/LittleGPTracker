@@ -1,7 +1,8 @@
 <CONFIG>
-	<DUMPEVENT value="YES"/>
+	<DUMPEVENT value="NO"/>
 	<AUTO_LOAD_LAST value="YES"/> <!-- change to disable auto loading -->
-	<SCREENMULT value="2"/> <!-- increase screen size -->
+	<SCREENMULT value="3"/> <!-- 960x720 usable desktop window -->
+	<FULLSCREEN value="NO"/> <!-- Cmd+Ctrl+F, F11, or the macOS green button -->
 
 	<KEY_A value="a"/>
 	<KEY_B value="s"/>

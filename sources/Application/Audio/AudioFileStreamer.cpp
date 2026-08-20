@@ -3,11 +3,18 @@
 #include "System/Console/Trace.h"
 #include "Application/Model/Config.h"
 
+// About 93 ms at 44.1 kHz. This keeps preview memory bounded while avoiding a
+// filesystem request for every mixer slice.
+static const int STREAM_BUFFER_FRAME_COUNT=4096 ;
+static const int STREAM_BUFFER_READ_SIZE=16384 ;
+
 AudioFileStreamer::AudioFileStreamer() {
 	wav_=0 ;
 	shift_=1 ;
 	mode_=AFSM_STOPPED ;
 	newPath_=false ;
+	bufferStart_=0 ;
+	bufferSize_=0 ;
 } ;
 
 AudioFileStreamer::~AudioFileStreamer() {
@@ -44,6 +51,8 @@ bool AudioFileStreamer::Render(fixed *buffer,int samplecount) {
 	if (newPath_) {
 		SAFE_DELETE(wav_) ;
 		newPath_=false ;
+		bufferStart_=0 ;
+		bufferSize_=0 ;
 	}
 
 	// new look if we need to load the file
@@ -58,6 +67,8 @@ bool AudioFileStreamer::Render(fixed *buffer,int samplecount) {
 			return false ;
 		}
 		position_=0 ;
+		bufferStart_=0 ;
+		bufferSize_=0 ;
 	}
 
 	// we are playing a valid file
@@ -71,21 +82,46 @@ bool AudioFileStreamer::Render(fixed *buffer,int samplecount) {
 		mode_=AFSM_STOPPED ;
 		memset(buffer,0,2*samplecount*sizeof(fixed)) ;
 	}
-	wav_->GetBuffer(position_,count) ;
-	fixed *dst=buffer ;
-	short *src=(short *)wav_->GetSampleBuffer(-1) ;
 	int channel=wav_->GetChannelCount(-1) ;
 
- // I might need to do sample interpolation here
+	// I might need to do sample interpolation here
 
-	for (int i=0;i<count;i++) {
-		fixed v=*dst++=i2fp((*src++)>>(1+shift_)) ;
-		if (channel==2) {
-			*dst++=i2fp((*src++)>>(1+shift_)) ;
-		} else {
-			*dst++=v ;
+	fixed *dst=buffer ;
+	int remaining=count ;
+	while (remaining>0) {
+		int bufferOffset=position_-bufferStart_ ;
+		if (bufferOffset<0 || bufferOffset>=bufferSize_) {
+			int framesToRead=size-position_ ;
+			if (framesToRead>STREAM_BUFFER_FRAME_COUNT) {
+				framesToRead=STREAM_BUFFER_FRAME_COUNT ;
+			}
+			if (!wav_->GetBuffer(position_,framesToRead,
+			                     STREAM_BUFFER_READ_SIZE)) {
+				Trace::Error("Failed to read streaming WAV data from %s",
+				             path_.GetPath().c_str()) ;
+				memset(dst,0,2*remaining*sizeof(fixed)) ;
+				mode_=AFSM_STOPPED ;
+				return count!=remaining ;
+			}
+			bufferStart_=position_ ;
+			bufferSize_=framesToRead ;
+			bufferOffset=0 ;
 		}
+
+		int frames=bufferSize_-bufferOffset ;
+		if (frames>remaining) frames=remaining ;
+		short *src=(short *)wav_->GetSampleBuffer(-1) ;
+		src+=bufferOffset*channel ;
+		for (int i=0;i<frames;i++) {
+			fixed v=*dst++=i2fp((*src++)>>(1+shift_)) ;
+			if (channel==2) {
+				*dst++=i2fp((*src++)>>(1+shift_)) ;
+			} else {
+				*dst++=v ;
+			}
+		}
+		position_+=frames ;
+		remaining-=frames ;
 	}
-	position_+=count ;
 	return true ;
 }

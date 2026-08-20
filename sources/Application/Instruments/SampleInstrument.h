@@ -83,6 +83,7 @@ public:
        virtual void Update(Observable &o,I_ObservableData *d);
        // Additional
        void AssignSample(int i) ;
+	   bool AssignSampleImmediate(int i) ;
 	   int GetSampleIndex() ;
 	   int GetVolume() ;
 	   void SetVolume(int) ;

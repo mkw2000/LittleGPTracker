@@ -22,63 +22,93 @@
 #define ACTION_PURGE_INSTRUMENT MAKE_FOURCC('P','R','G','I')
 #define ACTION_TEMPO_CHANGED    MAKE_FOURCC('T','E','M','P')
 
-static void SaveAsProjectCallback(View &v,ModalView &dialog) {
+static void CleanupSaveAsProject(const Path &projectDir, const Path &sampleDir,
+                                 const Path &saveFile) {
+    FileSystem *fs = FileSystem::GetInstance();
+    fs->Delete(saveFile.GetPath().c_str());
+
+    I_Dir *dir = fs->Open(sampleDir.GetPath().c_str());
+    if (dir) {
+        dir->GetContent("*");
+        IteratorPtr<Path> it(dir->GetIterator());
+        for (it->Begin(); !it->IsDone(); it->Next()) {
+            Path &entry = it->CurrentItem();
+            std::string name = entry.GetName();
+            if (name != "." && name != ".." && entry.IsFile())
+                fs->Delete(entry.GetPath().c_str());
+        }
+        delete dir;
+    }
+    fs->Delete(sampleDir.GetPath().c_str());
+    fs->Delete(projectDir.GetPath().c_str());
+}
+
+static void SaveAsProjectCallback(View &v, ModalView &dialog) {
 
     FileSystemService FSS;
-    NewProjectDialog &npd=(NewProjectDialog &)dialog;
+    NewProjectDialog &npd = (NewProjectDialog &)dialog;
 
-    if (dialog.GetReturnCode()>0) {
-		std::string str_dstprjdir;
-		std::string str_dstsmpdir;
+    if (dialog.GetReturnCode() > 0) {
+        Path root("root:");
+        Path path_dstprjdir = root.Descend(npd.GetName());
+        Path path_dstsmpdir = path_dstprjdir.Descend("samples");
+        Path path_dstlgptdatsav = path_dstprjdir.Descend("lgptsav.dat");
 
-		Path root("root:");
-		str_dstprjdir = root.GetName() + "/" + npd.GetName();
-		str_dstsmpdir = str_dstprjdir + "/samples/";
-
-		Path path_srcprjdir("project:");
-		Path path_srcsmpdir("project:samples");
-		Path path_dstprjdir = Path(str_dstprjdir);
-		Path path_dstsmpdir = Path(str_dstsmpdir);
-
-        Path path_srclgptdatsav = path_srcprjdir.GetPath() + "lgptsav_tmp.dat";
-        Path path_dstlgptdatsav = path_dstprjdir.GetPath() + "/lgptsav.dat";
-
-		if (path_dstprjdir.Exists()) {
-			Trace::Log("ProjectView", "Dst Dir '%s' Exist == true",
-			path_dstprjdir.GetPath().c_str());
-		} else {
-			if (FileSystem::GetInstance()->MakeDir(path_dstprjdir.GetPath().c_str()).Failed()) {
-				Trace::Log("ProjectView", "Failed to create dir '%s'", path_dstprjdir.GetPath().c_str());
-				return;
-			};
-
-		if (FileSystem::GetInstance()->MakeDir(path_dstsmpdir.GetPath().c_str()).Failed()) {
-			Trace::Log("ProjectView", "Failed to create sample dir '%s'", path_dstprjdir.GetPath().c_str());
-			return;
-		};
-
-        if (FSS.Copy(path_srclgptdatsav, path_dstlgptdatsav) > -1) {
-            FSS.Delete(path_srclgptdatsav);
+        FileSystem *fs = FileSystem::GetInstance();
+        if (path_dstprjdir.Exists()) {
+            v.SetNotification("Save As failed: name exists");
+            return;
+        }
+        if (fs->MakeDir(path_dstprjdir.GetPath().c_str()).Failed()) {
+            Trace::Error("Failed to create project directory %s",
+                         path_dstprjdir.GetPath().c_str());
+            v.SetNotification("Save As failed: create folder");
+            return;
+        }
+        if (fs->MakeDir(path_dstsmpdir.GetPath().c_str()).Failed()) {
+            Trace::Error("Failed to create sample directory %s",
+                         path_dstsmpdir.GetPath().c_str());
+            v.SetNotification("Save As failed: create samples");
+            fs->Delete(path_dstprjdir.GetPath().c_str());
+            return;
         }
 
-        I_Dir *idir_srcsmpdir =
-            FileSystem::GetInstance()->Open(path_srcsmpdir.GetPath().c_str());
-        if (idir_srcsmpdir) {
-				idir_srcsmpdir->GetContent("*");
-				idir_srcsmpdir->Sort();
-				IteratorPtr<Path>it(idir_srcsmpdir->GetIterator());
-				for (it->Begin();!it->IsDone();it->Next()) {
-					Path &current=it->CurrentItem();
-					if (current.IsFile()) {
-						Path dstfile = Path((str_dstsmpdir+current.GetName()).c_str());
-						Path srcfile = Path(current.GetPath());
-						FSS.Copy(srcfile.GetPath(),dstfile.GetPath());
-					}
-				}
-			}
+        Path path_srcsmpdir("project:samples");
+        I_Dir *srcdir = fs->Open(path_srcsmpdir.GetPath().c_str());
+        bool copySucceeded = srcdir != 0;
+        if (srcdir) {
+            srcdir->GetContent("*");
+            srcdir->Sort();
+            IteratorPtr<Path> it(srcdir->GetIterator());
+            for (it->Begin(); !it->IsDone(); it->Next()) {
+                Path &current = it->CurrentItem();
+                if (current.IsFile()) {
+                    Path dstfile = path_dstsmpdir.Descend(current.GetName());
+                    if (FSS.Copy(current, dstfile) < 0) {
+                        copySucceeded = false;
+                        break;
+                    }
+                }
+            }
+            delete srcdir;
+        }
+        if (!copySucceeded) {
+            CleanupSaveAsProject(path_dstprjdir, path_dstsmpdir,
+                                 path_dstlgptdatsav);
+            v.SetNotification("Save As failed: copy samples");
+            return;
+        }
 
-		((ProjectView &)v).OnSaveAsProject((char*)str_dstprjdir.c_str());
-		}
+        PersistencyService *service = PersistencyService::GetInstance();
+        if (!service->Save(path_dstlgptdatsav.GetPath().c_str())) {
+            CleanupSaveAsProject(path_dstprjdir, path_dstsmpdir,
+                                 path_dstlgptdatsav);
+            v.SetNotification("Save As failed: write project");
+            return;
+        }
+
+        std::string destination = path_dstprjdir.GetPath();
+        ((ProjectView &)v).OnSaveAsProject((char *)destination.c_str());
     }
 }
 
@@ -306,12 +336,13 @@ void ProjectView::Update(Observable &,I_ObservableData *data) {
         case ACTION_SAVE: {
             MixerService::GetInstance()->SetRenderMode(0);
             PersistencyService *service = PersistencyService::GetInstance();
-            service->Save();
+            if (!service->Save())
+                View::SetNotification("Save failed: check storage");
+            else
+                View::SetNotification("Saved");
             break;
         }
         case ACTION_SAVE_AS: {
-            PersistencyService *service = PersistencyService::GetInstance();
-            service->Save("project:lgptsav_tmp.dat");
             NewProjectDialog *mb = new NewProjectDialog(*this, "root:");
             DoModal(mb, SaveAsProjectCallback);
             break;

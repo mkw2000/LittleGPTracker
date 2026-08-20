@@ -1,4 +1,5 @@
 #include "AudioMixer.h"
+#include "System/Console/Trace.h"
 #include "System/System/System.h"
 #include <math.h>
 
@@ -7,14 +8,18 @@
 
 AudioMixer::AudioMixer(const char *name):
 	T_SimpleList<AudioModule>(false),
+	iterator_(*this),
+	mixBuffer_(0),
+	mixBufferCapacity_(0),
 	enableRendering_(0),
 	writer_(0),
 	name_(name)
 {
 	volume_=(i2fp(1)) ;
     softclip_ = -1;
-    softclipGain_ = 0 ;
+	softclipGain_ = 0 ;
 	masterVolume_ = 100 ;
+	masterDamp_ = 1.0f ;
 	clipped_ = false ;
     peakMixerLevel_ = 0;
     preMasterVolumePeakLevel_ = 0 ;
@@ -43,6 +48,8 @@ AudioMixer::AudioMixer(const char *name):
 } ;
 
 AudioMixer::~AudioMixer() {
+	SAFE_FREE(mixBuffer_) ;
+	mixBufferCapacity_=0 ;
 }
 
 void AudioMixer::SetFileRenderer(const char *path) {
@@ -69,20 +76,27 @@ void AudioMixer::EnableRendering(bool enable) {
 bool AudioMixer::Render(fixed *buffer,int samplecount) {
     clipped_ = false;
 
-    fixed *mixBuffer = 0;
     bool gotData = false;
-    IteratorPtr<AudioModule> it(GetIterator());
-    for (it->Begin(); !it->IsDone(); it->Next()) {
-        AudioModule &current = it->CurrentItem();
+    for (iterator_.Begin(); !iterator_.IsDone(); iterator_.Next()) {
+        AudioModule &current = iterator_.CurrentItem();
         if (!gotData) {
             gotData=current.Render(buffer,samplecount) ;           
          } else {
-            if (!mixBuffer) {
-               mixBuffer=(fixed *)malloc(samplecount*2*sizeof(fixed)) ;
-            } 
-            if (current.Render(mixBuffer,samplecount)) {
+            int required=samplecount*2 ;
+            if (required>mixBufferCapacity_) {
+                fixed *replacement=(fixed *)SYS_MALLOC(
+                    required*sizeof(fixed)) ;
+                if (!replacement) {
+                    Trace::Error("Could not allocate mixer scratch buffer") ;
+                    continue ;
+                }
+                SAFE_FREE(mixBuffer_) ;
+                mixBuffer_=replacement ;
+                mixBufferCapacity_=required ;
+            }
+            if (current.Render(mixBuffer_,samplecount)) {
                fixed *dst=buffer ;
-               fixed *src=mixBuffer ;
+               fixed *src=mixBuffer_ ;
                int count=samplecount*2 ;
                while (count--) {
                  *dst+=*src ;
@@ -97,17 +111,30 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
 
      if (gotData) {
          fixed *c = buffer;
-         float damp = pow((float)masterVolume_ / 100, 4.0f);
 
-         // Capture pre-volume peaks (raw signal before any processing)
+         // Capture both peak stages while applying the bus volume. Keeping
+         // this in one pass matters on the PSP audio worker.
          fixed preVolumePeakL = i2fp(0), preVolumePeakR = i2fp(0);
+         fixed peakL = i2fp(0), peakR = i2fp(0);
          for (int i = 0; i < samplecount * 2; i += 2) {
              fixed left = c[i];
              fixed right = c[i + 1];
-             if (left < 0) left = -left;
-             if (right < 0) right = -right;
-             if (left > preVolumePeakL) preVolumePeakL = left;
-             if (right > preVolumePeakR) preVolumePeakR = right;
+             fixed preLeft = left < 0 ? -left : left;
+             fixed preRight = right < 0 ? -right : right;
+             if (preLeft > preVolumePeakL) preVolumePeakL = preLeft;
+             if (preRight > preVolumePeakR) preVolumePeakR = preRight;
+
+             if (volume_ != i2fp(1)) {
+                 left = fp_mul(left, volume_);
+                 right = fp_mul(right, volume_);
+                 c[i] = left;
+                 c[i + 1] = right;
+             }
+
+             fixed postLeft = left < 0 ? -left : left;
+             fixed postRight = right < 0 ? -right : right;
+             if (postLeft > peakL) peakL = postLeft;
+             if (postRight > peakR) peakR = postRight;
          }
          // Pack and store pre-volume peaks
          unsigned int prePackedL = (unsigned int)fp2i(preVolumePeakL);
@@ -115,29 +142,6 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
          if (prePackedL > 0xFFFF) prePackedL = 0xFFFF;
          if (prePackedR > 0xFFFF) prePackedR = 0xFFFF;
          preMasterVolumePeakLevel_ = (prePackedL << 16) | prePackedR;
-
-         // Track peak levels (left and right channels)
-         fixed peakL = i2fp(0), peakR = i2fp(0);
-
-         if (volume_ != i2fp(1)) {
-             for (int i = 0; i < samplecount * 2; i++) {
-                 fixed v = fp_mul(*c, volume_);
-                 *c++ = v;
-             }
-         }
-
-         // Re-point c to buffer start for peak tracking
-         c = buffer;
-         
-         // Track peak levels for both channels
-         for (int i = 0; i < samplecount * 2; i += 2) {
-             fixed left = c[i];
-             fixed right = c[i + 1];
-             if (left < 0) left = -left;
-             if (right < 0) right = -right;
-             if (left > peakL) peakL = left;
-             if (right > peakR) peakR = right;
-         }
 
          // left 16 bits | right 16 bits, clamped to 16-bit range
          unsigned int packedL = (unsigned int)fp2i(peakL);
@@ -148,10 +152,18 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
 
          // Apply soft/hard clipping before recording
          c = buffer;
-         for (int i = 0; i < samplecount * 2; i++) {
-             fixed sample = *c;
-             sample = fl2fp(damp * fp2fl(hardClip(softClip(sample))));
-             *c++ = sample;
+         if (softclip_ == -1 && masterDamp_ == 1.0f) {
+             for (int i = 0; i < samplecount * 2; i++) {
+                 fixed sample=*c ;
+                 *c++ = hardClip(sample) ;
+             }
+         } else {
+             for (int i = 0; i < samplecount * 2; i++) {
+                 fixed sample = *c;
+                 sample = fl2fp(masterDamp_ *
+                                fp2fl(hardClip(softClip(sample))));
+                 *c++ = sample;
+             }
          }
      }
     if (enableRendering_&&writer_) {
@@ -160,7 +172,6 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
 		} ;
 		writer_->AddBuffer(buffer,samplecount) ;
 	}
-     SAFE_FREE(mixBuffer) ;
      return gotData ;
 } ;
 
@@ -172,7 +183,10 @@ void AudioMixer::SetSoftclip(int clip, int gain) {
 }
 
 void AudioMixer::SetMasterVolume(int volume) {
+	if (masterVolume_==volume)
+		return ;
 	masterVolume_ = volume;
+	masterDamp_ = pow((float)masterVolume_ / 100, 4.0f);
 }
 
 bool AudioMixer::Clipped() { return clipped_; }
@@ -199,7 +213,7 @@ fixed AudioMixer::softClip(fixed sample) {
 
     x = data->alphaInv * (sampleFloat / maxFloat);
     if (x > -1.0f && x < 1.0f) {
-        sampleFloat = maxFloat * (data->alpha * (x - (pow(x, 3.0f) / 3.0f)));
+        sampleFloat = maxFloat * (data->alpha * (x - (x * x * x / 3.0f)));
     } else {
         sampleFloat = maxFloat * data->alpha23;
     }

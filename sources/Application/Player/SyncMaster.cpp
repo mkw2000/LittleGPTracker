@@ -58,6 +58,12 @@ float SyncMaster::GetPlaySampleCount() {
 	return playSampleCount_ ;
 } ;
 
+// A phrase step is always six audio slices. Unlike table ticks, this ignores
+// the legacy table ratio so tempo-synced effects stay musical in old projects.
+int SyncMaster::GetStepSampleCount() {
+	return (int)(playSampleCount_ * AUDIO_SLICES_PER_STEP + 0.5f) ;
+} ;
+
 // Returns the number of sample per tick
 float SyncMaster::GetTickSampleCount() {
 	return tickSampleCount_ ;

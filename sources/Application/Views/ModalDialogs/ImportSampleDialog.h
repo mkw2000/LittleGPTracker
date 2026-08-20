@@ -25,7 +25,8 @@ protected:
 private:
 	Path *getImportElement();
 	bool isSampleLibRoot();
-	void setCurrent(Path *element, unsigned short mask);
+	bool setCurrent(Path *element, unsigned short mask);
+	I_Dir *directory_ ;
 	T_SimpleList<Path> sampleList_ ;
 	int currentSample_ ;
 	int topIndex_ ;
@@ -39,4 +40,3 @@ private:
 
 
 #endif
-

@@ -28,6 +28,8 @@ public:
 
 	void StartInstrument(int channel,I_Instrument *instrument,unsigned char note,bool newInstrument) ;
 	void StopInstrument(int channel) ;
+	bool ProcessFXCommand(int channel, FourCC command,
+	                      unsigned short parameter) ;
 
 	int GetChannelNote(int Channel) ;
 

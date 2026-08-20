@@ -349,21 +349,12 @@ To move from one screen to the other, press the RTrigger combined with the direc
 ![](https://web.archive.org/web/20190321005749im_/http://wiki.littlegptracker.com/lib/exe/fetch.php?media=screen:instrument_1.3n.png)
 
 - **sample:** selects the .wav file to associate with the instrument. you can select the same sample in more than one instrument. if you tap A,A here it will take you to the Sample Import Screen (which lets you load new .WAV into your project).
-- **FX selector:** Select between 4 impulse responses to print to the currently selected sample
-- **Wet:** How much of the effect to print 0 = nothing, 10 = probably too much
-- **Pad** For short samples, add up to 5000 ms silence to the end of the sample to let the reverb tail ring out.
-FX section requires full ffmpeg to process audio and is currently only available for certain platforms
-If it doesn't appear to do anything, check lgpt.log for hints as to why it doesn't do what you expect it to do!
-Select which reverb you want by holding A+Left/Right. Apply it by double-tapping A
-Reverbs created by using ffmpegs convolution filter [Impulse response](https://en.wikipedia.org/wiki/Convolution)
-Convolution wraps the audio file from start to end. If the sample is very short, you can get
-a longer reverb tail by setting the pad parameter.
-If applied to the sample Kick.wav the audio file with reverb applied will be called Kick_.wav
-IR credits:
-    Room by [Uzbanur](https://freesound.org/people/Uzbazur/sounds/382907/)
-    Hall by [NoiseCollector](https://freesound.org/people/NoiseCollector/sounds/184127/)
-    Spring by [recordinghopkins](https://freesound.org/people/recordinghopkins/sounds/175302/)
-    Church by [jotarrl](https://freesound.org/people/jotarrl/sounds/725443/)
+- **Reverb:** Select between room, hall, spring, and church reverb presets.
+- **Wet:** Sets how much reverb is mixed into the rendered sample, from 0% to 100%.
+- **Tail:** Adds up to 5000 ms for the reverb to ring out after the source sample ends.
+- **Render reverb:** Renders the selected settings to a new WAV and assigns that WAV to the current instrument. Stop playback before rendering.
+
+Select a preset with A+Left/Right, adjust Wet and Tail, then move to Render reverb and press A. The original WAV is preserved; repeated renders receive numbered filenames rather than overwriting an existing file.
 
 - **volume:**
 - **pan:** pans the instrument left or right (0x7F is center)
@@ -477,9 +468,25 @@ ARPG 4050: loops between original pitch, +4 semitones, +0 semitones, + 5 semiton
 
 **aa = pre crush drive (from 1 to 0xFF, 00 is no change) & bb = crush setting (from 0 to 0xF, 0x0 is 1 bit, 0xF is 16bit )**
 
+## CHOR --bb
+
+**Sets the per-track chorus wet amount. `00` turns chorus off and `FF` is maximum.**
+
 ## DLAY --bb
 
 **Delays the note to be played by bb tics**
+
+## ECHO --bb
+
+**Sets how much of the current track is sent into its stereo Echo. `00` turns the send off and `FF` is maximum.** Echo repeats already in the buffer continue to decay.
+
+## EFBK --bb
+
+**Sets Echo feedback. `00` produces one repeat and `FF` gives the longest decay.**
+
+## ETIM --bb
+
+**Sets Echo time in tempo-synced phrase steps.** `01` is one sixteenth note, `02` is an eighth note, `03` is a dotted eighth, and `04` is a quarter note. `00` is treated as `01`; very long times are limited by the two-second Echo buffer.
 
 ## FCUT aabb
 
@@ -492,6 +499,11 @@ ARPG 4050: loops between original pitch, +4 semitones, +0 semitones, + 5 semiton
 **lowpass filter, set absolute frequency value for cutoff aa & resonance bb**
 
 - FLTR 00FF is un-adultered sound
+
+## FLNG --bb
+
+**Sets the per-track flanger wet amount. `00` turns flanger off and `FF` is maximum.** CHOR and FLNG share one modulation line, so enabling one selects that mode.
+
 ## FRES aabb
 
 **adjust the filter resonance to bb at speed aa**
@@ -589,6 +601,10 @@ Sets MIDI note velocity
 RTRG 0001: loop one tick from current play position
 RTRG 0102: loop of two ticks but move the loop one tick every loop
 RTRG 0101: does not do anything because after looping one tick, you move forward one tick and therefore go back to the current position :)
+
+## RVRB --bb
+
+**Sets how much of the current track is sent into a compact realtime room reverb. `00` turns the send off and `FF` is maximum.** This is separate from the Instrument screen's non-destructive Render reverb action.
 
 ## TABL --bb
 

@@ -39,7 +39,8 @@ public: // I_GUIWindowImp implementation
 
 public: // Added functionality
 	void ProcessExpose() ;
-	void ProcessQuit() ;
+    void ProcessResume();
+    void ProcessQuit() ;
 	void ProcessUserEvent(SDL_Event &event) ;
 protected:
 	void prepareFonts() ;

@@ -5,6 +5,9 @@
 #include "SDLGUIWindowImp.h"
 #include "Application/Model/Config.h"
 #include "System/Console/Trace.h"
+#ifdef PLATFORM_PSP
+#include "Adapters/PSP/System/PSPSystem.h"
+#endif
 bool SDLEventManager::finished_=false ;
 bool SDLEventManager::dumpEvent_=false ;
 
@@ -36,23 +39,35 @@ bool SDLEventManager::Init()
 	joyCount=(joyCount>MAX_JOY_COUNT)?MAX_JOY_COUNT:joyCount ;
 
 	keyboardCS_=new KeyboardControllerSource("keyboard") ;
+#if defined(PLATFORM_PSP) && defined(NDEBUG)
+	// Per-button logging opens and flushes a Memory Stick file twice per press.
+	// Keep it out of release PSP builds even when an older external config.xml
+	// still has the historical debug setting enabled.
+	dumpEvent_=false ;
+#else
 	const char *dumpIt=Config::GetInstance()->GetValue("DUMPEVENT") ;
 	if ((dumpIt)&&(!strcmp(dumpIt,"YES")))
   {
 		dumpEvent_=true ;
 	}
+#endif
 
 	for (int i=0;i<MAX_JOY_COUNT;i++) 
   {
 		joystick_[i]=0 ;
 		buttonCS_[i]=0 ;
 		joystickCS_[i]=0 ;
+		hatCS_[i]=0 ;
 	}
     
 	for (int i=0;i<joyCount;i++) 
   {
 		char sourceName[128] ;
 		joystick_[i]=SDL_JoystickOpen(i) ;
+    if (!joystick_[i]) {
+      Trace::Error("Could not open joystick %d: %s", i, SDL_GetError()) ;
+      continue ;
+    }
     Trace::Log("EVENT","joystick[%d]=%x",i,joystick_[i]) ;
 		Trace::Log("EVENT","Number of axis:%d",SDL_JoystickNumAxes(joystick_[i])) ;
 		Trace::Log("EVENT","Number of buttons:%d",SDL_JoystickNumButtons(joystick_[i])) ;
@@ -80,7 +95,18 @@ int SDLEventManager::MainLoop()
 	while (!finished_)
 	{
 		SDL_Event event;
-		if (SDL_WaitEvent(&event)) 
+#ifdef PLATFORM_PSP
+		if (PSPSystem::ProcessPowerEvents())
+			sdlWindow->ProcessResume() ;
+		if (!SDL_PollEvent(&event)) {
+			SDL_Delay(5) ;
+			continue ;
+		}
+		bool receivedEvent=true ;
+#else
+		bool receivedEvent=SDL_WaitEvent(&event)!=0 ;
+#endif
+		if (receivedEvent)
     {
 			switch (event.type) {
 				case SDL_KEYDOWN:
@@ -101,19 +127,25 @@ int SDLEventManager::MainLoop()
 
 
 				case SDL_JOYBUTTONDOWN:
-					buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,true) ;
+					if (event.jbutton.which < MAX_JOY_COUNT &&
+					    buttonCS_[event.jbutton.which])
+						buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,true) ;
 					break ;
 				case SDL_JOYBUTTONUP:
 					if (dumpEvent_) {
 						Trace::Log("EVENT","but(%d):%d",event.button.which,event.jbutton.button) ;
 					}
-					buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,false) ;
+					if (event.jbutton.which < MAX_JOY_COUNT &&
+					    buttonCS_[event.jbutton.which])
+						buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,false) ;
 					break ;
 				case SDL_JOYAXISMOTION:
 					if (dumpEvent_) {
 						Trace::Log("EVENT","joy(%d)::%d=%d",event.jaxis.which,event.jaxis.axis,event.jaxis.value) ;
 					}
-					joystickCS_[event.jaxis.which]->SetAxis(event.jaxis.axis,float(event.jaxis.value)/32767.0f) ;
+					if (event.jaxis.which < MAX_JOY_COUNT &&
+					    joystickCS_[event.jaxis.which])
+						joystickCS_[event.jaxis.which]->SetAxis(event.jaxis.axis,float(event.jaxis.value)/32767.0f) ;
 					break ;
 				case SDL_JOYHATMOTION:
 					if (dumpEvent_)
@@ -127,7 +159,9 @@ int SDLEventManager::MainLoop()
 							}
 						}
 					}
-					hatCS_[event.jhat.which]->SetHat(event.jhat.hat,event.jhat.value) ;
+					if (event.jhat.which < MAX_JOY_COUNT &&
+					    hatCS_[event.jhat.which])
+						hatCS_[event.jhat.which]->SetHat(event.jhat.hat,event.jhat.value) ;
 					break ;
 				case SDL_JOYBALLMOTION:
 					if (dumpEvent_)

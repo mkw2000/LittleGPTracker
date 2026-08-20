@@ -4,6 +4,7 @@
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Model/Config.h"
 #include "BaseClasses/UIBigHexVarField.h"
+#include "BaseClasses/UIActionField.h"
 #include "BaseClasses/UIIntVarOffField.h"
 #include "BaseClasses/UINoteVarField.h"
 #include "BaseClasses/UIStaticField.h"
@@ -11,6 +12,8 @@
 #include "ModalDialogs/ImportSampleDialog.h"
 #include "ModalDialogs/MessageBox.h"
 #include "System/System/System.h"
+
+#define ACTION_RENDER_REVERB MAKE_FOURCC('R', 'R', 'V', 'B')
 
 void ImportSampleDialogCallback(View &v, ModalView &dialog) {
     ((InstrumentView &)v).OnFocus();
@@ -21,6 +24,9 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 	project_=data->project_ ;
 	lastFocusID_=0 ;
 	current_=0 ;
+	reverbApply_=0 ;
+	renderingReverb_=false ;
+	reverbRefreshPending_=false ;
 	onInstrumentChange() ;
 }
 
@@ -44,9 +50,10 @@ void InstrumentView::onInstrumentChange() {
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
 	current_=bank->GetInstrument(i) ;
 
-	if (current_!=old) {
-		current_->RemoveObserver(*this) ;
+	if (current_!=old && old) {
+		old->RemoveObserver(*this) ;
 	} ;
+	reverbApply_=0 ;
 	T_SimpleList<UIField>::Empty() ;
 
 	InstrumentType it=getInstrumentType() ;
@@ -63,10 +70,11 @@ void InstrumentView::onInstrumentChange() {
 	SetFocus(T_SimpleList<UIField>::GetFirst()) ;
 	IteratorPtr<UIField> it2(T_SimpleList<UIField>::GetIterator()) ;
 	for (it2->Begin();!it2->IsDone();it2->Next()) {
-        UIIntVarField &field=(UIIntVarField &)it2->CurrentItem() ;
-        if (field.GetVariableID()==lastFocusID_) {
-            SetFocus(&field) ;
-            break ;
+		UIField &field=it2->CurrentItem() ;
+		FourCC variableID=field.GetVariableID() ;
+		if (variableID && variableID==lastFocusID_) {
+			SetFocus(&field) ;
+			break ;
         }
     } ;
 	if (current_!=old) {
@@ -90,23 +98,27 @@ void InstrumentView::fillSampleParameters() {
 	f1->SetFocus() ;
 
     position._y += 1;
-#ifdef FFMPEG_ENABLED
     v = instrument->FindVariable(SIP_PRINTFX);
-    f1 = new UIIntVarField(position, *v, "%s", 0, 3, 1, 2);
+    f1 = new UIIntVarField(position, *v, "rvb:%s", 0, 3, 1, 2);
     T_SimpleList<UIField>::Insert(f1) ;
 
-    position._x += 7;
+    position._x += 11;
     v = instrument->FindVariable(SIP_IR_WET);
     f1 = new UIIntVarField(position, *v, "wet:%d%%", 0, 100, 1, 10);
     T_SimpleList<UIField>::Insert(f1);
     position._x += 9;
 
     v = instrument->FindVariable(SIP_IR_PAD);
-    f1 = new UIIntVarField(position, *v, "pad:%dms", 0, 5000, 5, 100);
+    f1 = new UIIntVarField(position, *v, "tail:%dms", 0, 5000, 5, 100);
     T_SimpleList<UIField>::Insert(f1);
-    position._x -= 16;
-#endif
-    position._y += 2;
+    position._x -= 20;
+    position._y += 1;
+    reverbApply_ = new UIActionField("Render reverb", ACTION_RENDER_REVERB,
+                                     position);
+    reverbApply_->AddObserver(*this);
+    T_SimpleList<UIField>::Insert(reverbApply_);
+
+    position._y += 1;
     v=instrument->FindVariable(SIP_VOLUME) ;
 	f1=new UIIntVarField(position,*v,"volume: %d [%2.2X]",0,255,1,10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
@@ -285,6 +297,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 	if (!pressed) return ;
 
 	isDirty_=false ;
+	bool renderReverb = (mask == EPBM_A) && (GetFocus() == reverbApply_);
 
 	if (viewMode_==VM_NEW) {
 		if (mask==EPBM_A) {
@@ -316,12 +329,6 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 					}
 					break ;
                 }
-                case SIP_PRINTFX: {
-                    FxPrinter printer(viewData_);
-                    isDirty_ = printer.Run();
-                    View::SetNotification(printer.GetNotification());
-                    break;
-                }
                 default:
                     break ;
 			}
@@ -352,6 +359,16 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 	}
 
 	FieldView::ProcessButtonMask(mask) ;
+	// Rendering can change the current sample, which notifies this view. Do not
+	// rebuild the field list until UIActionField::OnClick/NotifyObservers has
+	// fully returned; deleting reverbApply_ inside its own callback is a UAF.
+	if (renderReverb) {
+		if (reverbRefreshPending_) {
+			reverbRefreshPending_=false ;
+			onInstrumentChange() ;
+		}
+		return ;
+	}
 
     Player *player=Player::GetInstance() ;
 	// B Modifier
@@ -391,10 +408,10 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 
         // A modifier
 
-        if (mask == EPBM_A) {
-            FourCC varID = ((UIIntVarField *)GetFocus())->GetVariableID();
+        if ((mask == EPBM_A) && !renderReverb) {
+            FourCC varID = GetFocus()->GetVariableID();
             if ((varID == SIP_TABLE) || (varID == MIP_TABLE) ||
-                (varID == SIP_SAMPLE) || (varID == SIP_PRINTFX)) {
+                (varID == SIP_SAMPLE)) {
                 viewMode_ = VM_NEW;
 			}
         } else {
@@ -452,8 +469,8 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
         }
     }
 
-    UIIntVarField *field = (UIIntVarField *)GetFocus();
-    if (field) {
+    UIField *field = GetFocus();
+    if (field && field->GetVariableID()) {
 	   lastFocusID_=field->GetVariableID() ;
     }
 
@@ -483,5 +500,18 @@ void InstrumentView::DrawView() {
 void InstrumentView::OnFocus() { onInstrumentChange(); }
 
 void InstrumentView::Update(Observable &o,I_ObservableData *d) {
+    if (&o == reverbApply_) {
+		renderingReverb_=true ;
+        FxPrinter printer(viewData_);
+        isDirty_ = printer.Run();
+        View::SetNotification(printer.GetNotification());
+		renderingReverb_=false ;
+        return;
+    }
+	if (renderingReverb_) {
+		reverbRefreshPending_=true ;
+		return ;
+	}
+
 	onInstrumentChange() ;
 }

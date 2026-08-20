@@ -32,6 +32,9 @@ public:
 private:
   fixed hardClip(fixed sample);
   fixed softClip(fixed sample);
+  T_SimpleListIterator<AudioModule> iterator_;
+  fixed *mixBuffer_;
+  int mixBufferCapacity_;
   bool enableRendering_;
   std::string renderPath_;
   WavFileWriter *writer_;
@@ -41,6 +44,7 @@ private:
   int softclip_;
   int softclipGain_;
   int masterVolume_;
+  float masterDamp_;
   bool clipped_;
   unsigned int peakMixerLevel_;
   unsigned int preMasterVolumePeakLevel_;

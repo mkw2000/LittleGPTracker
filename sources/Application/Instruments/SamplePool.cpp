@@ -149,28 +149,52 @@ int SamplePool::loadSample(const char *path) {
 
     if (count_==MAX_PIG_SAMPLES) return SLOAD_ERR_MAX_SAMPLES ;
 
-Path sPath(path) ;
-Status::Set("Loading %s", sPath.GetName().c_str());
-Trace::Log("loadSample", "%s", path);
+    Path wavPath(path);
+    WavFile *wave = loadWavSource(path);
+    if (!wave)
+        return SLOAD_ERR_INPUT_FILE;
 
-Path wavPath(path);
-WavFile *wave = WavFile::Open(path);
-if (wave) {
-    wav_[count_] = wave;
     const std::string name = wavPath.GetName();
-    names_[count_] = (char *)SYS_MALLOC(name.length() + 1);
-    strcpy(names_[count_], name.c_str());
+    char *storedName = (char *)SYS_MALLOC(name.length() + 1);
+    if (!storedName) {
+        Trace::Error("Out of memory storing sample name %s", name.c_str());
+        delete wave;
+        return SLOAD_ERR_INPUT_FILE;
+    }
+
+    strcpy(storedName, name.c_str());
+    wav_[count_] = wave;
+    names_[count_] = storedName;
     count_++;
-    wave->GetBuffer(0, wave->GetSize(-1));
-    wave->Close();
     return SLOAD_OK;
-} else {
-    Trace::Error("Failed to load samples %s", wavPath.GetName().c_str());
-    return SLOAD_ERR_INPUT_FILE;
-}
 }
 
-#define IMPORT_CHUNK_SIZE 1000
+WavFile *SamplePool::loadWavSource(const char *path) {
+    Path wavPath(path);
+    Status::Set("Loading %s", wavPath.GetName().c_str());
+    Trace::Log("loadSample", "%s", path);
+
+    WavFile *wave = WavFile::Open(path);
+    if (!wave) {
+        Trace::Error("Failed to open sample %s", wavPath.GetName().c_str());
+        return 0;
+    }
+#ifdef PLATFORM_PSP
+    // Larger sequential reads materially reduce Memory Stick syscall overhead
+    // while adding at most 12 KiB to the temporary WAV read buffer.
+    const int readChunkSize = 16 * 1024;
+#else
+    const int readChunkSize = 0;
+#endif
+    if (!wave->GetBuffer(0, wave->GetSize(-1), readChunkSize)) {
+        Trace::Error("Failed to load sample data %s",
+                     wavPath.GetName().c_str());
+        delete wave;
+        return 0;
+    }
+    wave->Close();
+    return wave;
+}
 
 /*
   Returns a nonnegative int or an element of
@@ -178,6 +202,19 @@ if (wave) {
    -SLOAD_ERR_MAX_SOUNDFONTS}.
 */
 int SamplePool::ImportSample(Path &path) {
+
+    // Importing a WAV that is already in this project's pool should simply
+    // select the existing sample. The old path overwrote the project copy and
+    // appended a duplicate name, which could fail on PSP or leave two entries
+    // backed by different in-memory data.
+    if (path.Matches("*.wav")) {
+        int existingIndex = getIndexOf(path.GetName().c_str());
+        if (existingIndex >= 0) {
+            Trace::Log("ImportSample", "Reusing imported sample %s",
+                       path.GetName().c_str());
+            return existingIndex;
+        }
+    }
 
     if (count_ == MAX_PIG_SAMPLES)
         return -SLOAD_ERR_MAX_SAMPLES;
@@ -188,51 +225,31 @@ int SamplePool::ImportSample(Path &path) {
     dpath+=path.GetName() ;
 	Path dstPath(dpath.c_str()) ;
 
-    // Opens files
+	if (path.GetCanonicalPath() == dstPath.GetCanonicalPath()) {
+        Trace::Error("Cannot import a sample over itself");
+        return -SLOAD_ERR_OUTPUT_FILE;
+    }
 
-	I_File *fin=FileSystem::GetInstance()->Open(path.GetPath().c_str(),"r") ;
-    if (!fin) {
-        Trace::Error("Failed to open input file %s",
-                     path.GetCanonicalPath().c_str());
-        return -SLOAD_ERR_INPUT_FILE;
-    };
-    fin->Seek(0, SEEK_END);
-    long size=fin->Tell() ;
-	fin->Seek(0,SEEK_SET) ;
-
-	I_File *fout=FileSystem::GetInstance()->Open(dstPath.GetPath().c_str(),"w") ;
-	if (!fout) {
-		fin->Close() ;
-        delete (fin);
-        return -SLOAD_ERR_OUTPUT_FILE ;
-	} ;
-
-    // copy file to current project
-
-    char buffer[IMPORT_CHUNK_SIZE];
-    while (size>0) {
-		int count=(size>IMPORT_CHUNK_SIZE)?IMPORT_CHUNK_SIZE:size ;
-		fin->Read(buffer,1,count) ;
-		fout->Write(buffer,1,count) ;
-		size-=count ;
-	} ;
-
-	fin->Close() ;
-	fout->Close() ;
-	delete(fin) ;
-	delete(fout) ;
+    FileSystemService fileService;
+    if (fileService.Copy(path, dstPath) < 0)
+        return -SLOAD_ERR_OUTPUT_FILE;
 
     // now load the sample
     int status = dstPath.Matches("*.wav")
                      ? loadSample(dstPath.GetPath().c_str())
                      : loadSoundFont(dstPath.GetPath().c_str());
 
+    if (status != SLOAD_OK) {
+        FileSystem::GetInstance()->Delete(dstPath.GetPath().c_str());
+        return -status;
+    }
+
     SetChanged();
     SamplePoolEvent ev ;
 	ev.index_=count_-1 ;
 	ev.type_=SPET_INSERT ;
     NotifyObservers(&ev);
-    return !status ?(count_-1):(-status) ;
+    return count_-1 ;
 };
 
 bool SamplePool::IsImported(std::string name) {
@@ -249,29 +266,54 @@ bool SamplePool::IsImported(std::string name) {
     count_-1 position if new
     previous position if already imported
 */
-int SamplePool::Reassign(std::string name, bool imported) {
-    if (count_ == MAX_PIG_SAMPLES)
-        return -1;
+int SamplePool::Reassign(std::string name) {
     int insertedIndex = getIndexOf(name.c_str());
-    if (imported)
-        unload(insertedIndex);
 
     std::string aliasPath = "samples:";
     aliasPath += name;
     Path dstPath(aliasPath.c_str());
+    WavFile *wave = loadWavSource(dstPath.GetCanonicalPath().c_str());
+    if (!wave)
+        return -1;
 
-    if (loadSample(dstPath.GetCanonicalPath().c_str())) {
+    if (insertedIndex >= 0) {
+        SoundSource *oldWave = wav_[insertedIndex];
+        wav_[insertedIndex] = wave;
+        SAFE_DELETE(oldWave);
         SetChanged();
         SamplePoolEvent ev;
-        ev.index_ = getIndexOf(name.c_str());;
-        ev.type_=SPET_INSERT;
+        ev.index_ = insertedIndex;
+        ev.type_=SPET_REPLACE;
         NotifyObservers(&ev);
-        return ev.index_;
+        return insertedIndex;
     }
-    return -1;
+
+    if (count_ == MAX_PIG_SAMPLES) {
+        delete wave;
+        return -1;
+    }
+
+    char *storedName = (char *)SYS_MALLOC(name.length() + 1);
+    if (!storedName) {
+        delete wave;
+        return -1;
+    }
+    strcpy(storedName, name.c_str());
+    wav_[count_] = wave;
+    names_[count_] = storedName;
+    int newIndex = count_++;
+
+    SetChanged();
+    SamplePoolEvent ev;
+    ev.index_ = newIndex;
+    ev.type_=SPET_INSERT;
+    NotifyObservers(&ev);
+    return newIndex;
 }
 
 void SamplePool::PurgeSample(int i) {
+	if (i < 0 || i >= count_)
+        return;
 
 	// construct the path of the sample to delete
 
@@ -281,7 +323,7 @@ void SamplePool::PurgeSample(int i) {
 	//delete wav
 	SAFE_DELETE(wav_[i]) ;
 	// delete name entry
-	SAFE_DELETE(names_[i]) ;
+	SAFE_FREE(names_[i]) ;
 
 	// delete file
 	FileSystem::GetInstance()->Delete(path.GetPath().c_str()) ;
@@ -303,32 +345,6 @@ void SamplePool::PurgeSample(int i) {
 	ev.type_=SPET_DELETE ;
 	NotifyObservers(&ev) ;
 } ;
-
-void SamplePool::unload(int i) {
-
-    // construct the path of the sample to delete
-
-	std::string wavPath="samples:" ;
-	wavPath+=names_[i] ;
-	Path path(wavPath.c_str()) ;
-
-	// shift all entries from deleted to end
-	for (int j=i;j<count_-1;j++) {
-		wav_[j]=wav_[j+1] ;
-		names_[j]=names_[j+1] ;
-	} ;
-	// decrease sample count
-	count_-- ;
-	wav_[count_]=0 ;
-	names_[count_]=0 ;
-
-	// now notify observers
-	SetChanged() ;
-	SamplePoolEvent ev ;
-	ev.index_=i ;
-	ev.type_=SPET_DELETE ;
-	NotifyObservers(&ev) ;
-}
 
 /*
   Returns an element of

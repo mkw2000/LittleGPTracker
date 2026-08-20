@@ -23,7 +23,7 @@ public:
 	virtual void ProcessArrow(unsigned short mask) ;
 	virtual void OnClick() {} ;
   
-  FourCC GetVariableID() ;
+	virtual FourCC GetVariableID() ;
 	Variable &GetVariable() ;
 protected:
 	Variable &src_ ;

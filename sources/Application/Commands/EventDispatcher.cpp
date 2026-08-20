@@ -50,7 +50,8 @@ EventDispatcher::~EventDispatcher() {
 void EventDispatcher::Execute(FourCC id,float value) {
 
 	if (window_) {
-		GUIEventPadButtonType mapping ;
+		GUIEventPadButtonType mapping=EPBT_A ;
+		bool mapped=true ;
 		switch(id) {
 			case TRIG_EVENT_A:
 				mapping=EPBT_A;
@@ -79,15 +80,21 @@ void EventDispatcher::Execute(FourCC id,float value) {
 			case TRIG_EVENT_START:
 				mapping=EPBT_START;
 				break ;
-				//	EPBT_SELECT
+			default:
+				mapped=false ;
+				break ;
+		}
+		if (!mapped) {
+			Trace::Error("Ignoring unknown controller event: %u", id) ;
+			return ;
 		}
 
 		// Compute mask and repeat if needed
 
 		if (value>0.5) {
-			eventMask_|=(1<<mapping) ;
+			eventMask_|=(1u<<mapping) ;
 		} else {
-			eventMask_^=(1<<mapping) ;
+			eventMask_&=~(1u<<mapping) ;
 		}
 
 		// Dispatch event to window

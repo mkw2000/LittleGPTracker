@@ -416,6 +416,14 @@ void AppWindow::LoadProject(const Path &p) {
 
 void AppWindow::CloseProject() {
 
+    UnloadProject();
+
+    SelectProjectDialog *spd = new SelectProjectDialog(*_currentView);
+    _currentView->DoModal(spd, ProjectSelectCallback);
+};
+
+void AppWindow::UnloadProject() {
+
     _closeProject = false;
     Player *player = Player::GetInstance();
     player->Stop();
@@ -437,6 +445,8 @@ void AppWindow::CloseProject() {
     SAFE_DELETE(_projectView);
     SAFE_DELETE(_instrumentView);
     SAFE_DELETE(_tableView);
+    SAFE_DELETE(_grooveView);
+    SAFE_DELETE(_mixerView);
 
     UIController *controller = UIController::GetInstance();
     controller->Reset();
@@ -445,9 +455,7 @@ void AppWindow::CloseProject() {
 
     _currentView = _nullView;
     _nullView->SetDirty(true);
-
-    SelectProjectDialog *spd = new SelectProjectDialog(*_currentView);
-    _currentView->DoModal(spd, ProjectSelectCallback);
+    _mask = 0;
 };
 
 AppWindow *AppWindow::Create(GUICreateWindowParams &params) {
@@ -458,6 +466,17 @@ AppWindow *AppWindow::Create(GUICreateWindowParams &params) {
 };
 
 void AppWindow::SetDirty() { _isDirty = true; };
+
+void AppWindow::ForceFullRedraw() {
+    SysMutexLocker locker(drawMutex_);
+    _mask = 0;
+    memset(_preScreen, 0xFF, sizeof(_preScreen));
+    memset(_preScreenProp, 0xFF, sizeof(_preScreenProp));
+    if (_currentView) {
+        _currentView->SetDirty(true);
+        _currentView->Redraw();
+    }
+}
 
 bool AppWindow::onEvent(GUIEvent &event) {
 
@@ -517,9 +536,12 @@ bool AppWindow::onEvent(GUIEvent &event) {
         _isDirty = true;
     }
     if (_loadAfterSaveAsProject) {
-        CloseProject();
+        Path projectPath(_newProjectToLoad);
+        _loadAfterSaveAsProject = false;
+        UnloadProject();
+        SaveLastProject(projectPath);
         _isDirty = true;
-        LoadProject(_newProjectToLoad.c_str());
+        LoadProject(projectPath);
     }
 #ifdef _SHOW_GP2X_
     Redraw();
@@ -647,7 +669,7 @@ void AppWindow::Print(char *line) {
 
     //	GUIWindow::Clear(View::backgroundColor_,true) ;
     Clear();
-    strcpy(_statusLine, line);
+    snprintf(_statusLine, sizeof(_statusLine), "%s", line ? line : "");
     // unwrapped for gcc
     int position = 40;
     position -= strlen(_statusLine);
@@ -658,8 +680,8 @@ void AppWindow::Print(char *line) {
     SetColor(CD_NORMAL);
     DrawString(_statusLine, pos, props);
     char buildString[80];
-    sprintf(buildString, "Piggy build %s.%s.%s", PROJECT_NUMBER,
-            PROJECT_RELEASE, BUILD_COUNT);
+    snprintf(buildString, sizeof(buildString), "Piggy build %s.%s.%s",
+             PROJECT_NUMBER, PROJECT_RELEASE, BUILD_COUNT);
     pos._y = 28;
     pos._x = (40 - strlen(buildString)) / 2;
     DrawString(buildString, pos, props);
@@ -681,7 +703,11 @@ Path AppWindow::GetLastProjectPath() {
     file->Seek(0, SEEK_END);
     int length = file->Tell();
     
-    if (length <= 0) {
+    const int maximumPathLength = 4096;
+    if (length <= 0 || length > maximumPathLength) {
+        if (length > maximumPathLength) {
+            Trace::Error("GetLastProject: invalid file length: %d", length);
+        }
         file->Close();
         delete file;
         return Path();
@@ -689,14 +715,21 @@ Path AppWindow::GetLastProjectPath() {
 
     // Allocate buffer and seek back to start
     char *buffer = (char *)SYS_MALLOC(length + 1);
+    if (!buffer) {
+        Trace::Error("GetLastProject: out of memory");
+        file->Close();
+        delete file;
+        return Path();
+    }
     memset(buffer, 0, length + 1);
 
     file->Seek(0, SEEK_SET); // Seek back to start
     int bytes = file->Read(buffer, 1, length); // Read full length
+    bool readFailed = file->HasError();
     file->Close();
     delete file;
 
-    if (bytes <= 0) {
+    if (bytes != length || readFailed) {
         Trace::Error("GetLastProject: Failed to read last project file");
         SYS_FREE(buffer);
         return Path();
@@ -704,10 +737,10 @@ Path AppWindow::GetLastProjectPath() {
 
     buffer[bytes] = 0; // Null terminate
 
-    // Remove newline if present
+    // Remove trailing newlines if present.
     int len = strlen(buffer);
-    if (len > 0 && buffer[len-1] == '\n') {
-        buffer[len-1] = 0;
+    while (len > 0 && (buffer[len - 1] == '\n' || buffer[len - 1] == '\r')) {
+        buffer[--len] = 0;
     }
 
     Path result;
@@ -719,7 +752,7 @@ Path AppWindow::GetLastProjectPath() {
                          buffer);
         }
     }
-    if (!result.IsDirectory()) {
+    if (!result.GetPath().empty() && !result.IsDirectory()) {
         Trace::Error("GetLastProject: path does not exist: %s", result.GetPath().c_str());
     }
 

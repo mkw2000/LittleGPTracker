@@ -18,6 +18,12 @@ typedef unsigned int uint ;
 typedef unsigned char uchar ;
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
-#define MAX(a,b) ((a)<(b)?(a):(b))
+#define MAX(a,b) ((a)>(b)?(a):(b))
+
+// Keep these basic helpers honest. A broken MAX silently disabled PSP reverb
+// by clamping every positive wet/tail value to zero.
+#if MIN(1,2) != 1 || MAX(1,2) != 2
+#error "MIN/MAX definitions are invalid"
+#endif
 
 #endif

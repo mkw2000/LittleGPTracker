@@ -20,6 +20,7 @@ bool ControlRoom::Init() {
 
 void ControlRoom::Close() {
 	Empty() ;
+	pendingMappings_.clear() ;
 } ;
 
 AssignableControlNode *ControlRoom::GetControlNode(const std::string url) {
@@ -68,10 +69,38 @@ bool ControlRoom::Attach(const char *nodeUrl,const char *controllerUrl) {
 	if (channel) {
 		mca->AddChannel(*channel) ;
 		Trace::Log("MAPPING","Attached %s to %s",nodeUrl,controllerUrl) ;
+		return true ;
 	} else {
-		Trace::Debug("Failed to attach %s to %s",nodeUrl,controllerUrl) ;
+		Trace::Debug("Deferred mapping %s to %s until the controller is available",nodeUrl,controllerUrl) ;
+		QueueMapping(nodeUrl,controllerUrl) ;
 	} ;
-	return true ;
+	return false ;
+} ;
+
+void ControlRoom::QueueMapping(const char *nodeUrl,const char *controllerUrl) {
+	for (unsigned int i=0;i<pendingMappings_.size();i++) {
+		if ((pendingMappings_[i].nodeUrl==nodeUrl)&&
+			(pendingMappings_[i].controllerUrl==controllerUrl)) {
+			return ;
+		}
+	}
+
+	PendingMapping pending ;
+	pending.nodeUrl=nodeUrl ;
+	pending.controllerUrl=controllerUrl ;
+	pendingMappings_.push_back(pending) ;
+} ;
+
+void ControlRoom::RetryMappings() {
+	unsigned int index=0 ;
+	while (index<pendingMappings_.size()) {
+		PendingMapping pending=pendingMappings_[index] ;
+		if (Attach(pending.nodeUrl.c_str(),pending.controllerUrl.c_str())) {
+			pendingMappings_.erase(pendingMappings_.begin()+index) ;
+		} else {
+			index++ ;
+		}
+	}
 } ;
 
 bool ControlRoom::LoadMapping(const char *mappingFile) {

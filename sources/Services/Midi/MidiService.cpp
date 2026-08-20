@@ -11,7 +11,8 @@
 
 MidiService::MidiService()
     : T_SimpleList<MidiOutDevice>(true), inList_(true), device_(0),
-      sendSync_(true) {
+      currentPlayQueue_(0), currentOutQueue_(0), merger_(0), midiDelay_(1),
+      tickToFlush_(0), sendSync_(true) {
     for (int i = 0; i < MIDI_MAX_BUFFERS; i++) {
         queues_[i] = new T_SimpleList<MidiMessage>(true);
     }
@@ -52,6 +53,10 @@ void MidiService::SelectDevice(const std::string &name) { deviceName_ = name; };
 bool MidiService::Start() {
     currentPlayQueue_ = 0;
     currentOutQueue_ = 0;
+    tickToFlush_ = 0;
+    for (int i = 0; i < MIDI_MAX_BUFFERS; i++) {
+        queues_[i]->Empty();
+    }
     return true;
 };
 
@@ -81,9 +86,6 @@ void MidiService::Trigger() {
 }
 
 void MidiService::AdvancePlayQueue() {
-#ifdef _FEAT_MIDI_LOCK
-    SysMutexLocker locker(queueMutex_);
-#endif
     int next = (currentPlayQueue_ + 1) % MIDI_MAX_BUFFERS;
     if (queueMutex_.TryLock()) {
         // Only clear AFTER successful lock — avoids data loss
@@ -116,9 +118,6 @@ void MidiService::Flush() {
 };
 
 void MidiService::flushOutQueue() {
-#ifdef _FEAT_MIDI_LOCK
-    SysMutexLocker locker(queueMutex_);
-#endif
     int next = (currentOutQueue_ + 1) % MIDI_MAX_BUFFERS;
 
     if (queueMutex_.TryLock()) {

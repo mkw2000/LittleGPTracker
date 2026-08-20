@@ -222,6 +222,11 @@ void SelectProjectDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
                     count++;
                 }
 
+					if (!current) {
+						View::SetNotification("No project selected");
+						break;
+					}
+
 					//check if folder is a project, indicated by 'lgpt' being the first 4 characters of the folder name
 					std::string name = current->GetName() ;
 					std::string firstFourChars = name.substr(0,4);
@@ -283,6 +288,11 @@ void SelectProjectDialog::warpToNextProject(int amount) {
 
     int offset = currentProject_ - topIndex_;
     int size = content_.Size();
+	if (size<=0) {
+		currentProject_=0 ;
+		topIndex_=0 ;
+		return ;
+	}
     currentProject_+=amount ;
 	if (currentProject_<0) currentProject_+=size ;
 	if (currentProject_>=size) currentProject_-=size ;
@@ -311,13 +321,18 @@ Result SelectProjectDialog::OnNewProject(std::string &name) {
     }
     Trace::Log("TMP","creating project at %s",path.GetPath().c_str());
 	selection_ = path ;
+	Path projectPath = path ;
 	Result result = FileSystem::GetInstance()->MakeDir(path.GetPath().c_str()) ;
-	RETURN_IF_FAILED(result, ("Failed to create project dir for '%s", path.GetPath().c_str()));
+	if (result.Failed())
+		return Result(result, "Failed to create project dir") ;
 
 	path = path.Descend("samples");
 	Trace::Log("TMP","creating samples dir at %s",path.GetPath().c_str());
 	result = FileSystem::GetInstance()->MakeDir(path.GetPath().c_str()) ;
-	RETURN_IF_FAILED(result, ("Failed to create samples dir for '%s'", path.GetPath().c_str()));
+	if (result.Failed()) {
+		FileSystem::GetInstance()->Delete(projectPath.GetPath().c_str()) ;
+		return Result(result, "Failed to create samples dir") ;
+	}
 
 	EndModal(1) ;
   return Result::NoError;

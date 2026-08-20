@@ -24,6 +24,36 @@ static inline std::string* getHelpLegend(FourCC command) {
 			result[1].assign("through relative pitches");
 			result[2].assign("from original pitch");
 			break;
+		case I_CMD_CHOR:
+			result[0].assign("CHORus:--bb");
+			result[1].assign("set chorus wet amount");
+			result[2].assign("00 turns chorus off");
+			break;
+		case I_CMD_ECHO:
+			result[0].assign("ECHO send:--bb");
+			result[1].assign("send track into echo");
+			result[2].assign("00 turns send off");
+			break;
+		case I_CMD_EFBK:
+			result[0].assign("Echo FeedBacK:--bb");
+			result[1].assign("set echo feedback");
+			result[2].assign("00 none, FF maximum");
+			break;
+		case I_CMD_ETIM:
+			result[0].assign("Echo TIMe:--bb");
+			result[1].assign("set echo delay to bb");
+			result[2].assign("tempo-synced steps");
+			break;
+		case I_CMD_FLNG:
+			result[0].assign("FLaNGer:--bb");
+			result[1].assign("set flanger wet amount");
+			result[2].assign("00 turns flanger off");
+			break;
+		case I_CMD_RVRB:
+			result[0].assign("ReVeRB send:--bb");
+			result[1].assign("send track into room");
+			result[2].assign("00 turns send off");
+			break;
 		case I_CMD_VOLM:
 			result[0].assign("VOLuMe:aabb");
 			result[1].assign("approach volume");

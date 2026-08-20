@@ -4,6 +4,7 @@
 #include "Application/Utils/char.h"
 #include "Application/Utils/fixed.h"
 #include "Services/Midi/MidiService.h"
+#include "Services/Audio/Audio.h"
 #include "SyncMaster.h"
 #include "System/Console/Trace.h"
 #include "System/System/System.h"
@@ -30,6 +31,12 @@ bool PlayerMixer::Init(Project *project) {
 	mixer->Insert(fileStreamer_) ;
 
 	project_=project ;
+	int sampleRate=Audio::GetInstance()->GetSampleRate();
+	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+		if (!channel_[i]->InitEffects(sampleRate)) {
+			Trace::Error("Could not allocate realtime FX for channel %d",i);
+		}
+	}
 
 	// Init states
 
@@ -45,6 +52,7 @@ void PlayerMixer::Close()  {
 
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 		channel_[i]->Reset() ;
+		channel_[i]->CloseEffects() ;
 	}
 
 
@@ -61,7 +69,11 @@ bool PlayerMixer::Start() {
         notes_[i]=0xFF ;
     } ;
 
-	return ms->Start() ;
+	if (!ms->Start()) {
+		ms->RemoveObserver(*this) ;
+		return false ;
+	}
+	return true ;
 } ;
 
 void PlayerMixer::Stop() {
@@ -129,6 +141,13 @@ void PlayerMixer::StopInstrument(int channel) {
     notes_[channel]=0xFF ;
 }
 
+bool PlayerMixer::ProcessFXCommand(int channel, FourCC command,
+                                   unsigned short parameter) {
+    if (channel < 0 || channel >= SONG_CHANNEL_COUNT)
+        return false;
+    return channel_[channel]->ProcessFXCommand(command, parameter);
+}
+
 I_Instrument *PlayerMixer::GetInstrument(int channel) {
     return channel_[channel]->GetInstrument();
 }
@@ -147,14 +166,23 @@ bool PlayerMixer::IsChannelMuted(int channel) {
 }
 
 void PlayerMixer::StartStreaming(const Path &path) {
+	MixerService *ms=MixerService::GetInstance() ;
+	ms->Lock() ;
 	fileStreamer_.Start(path) ;
+	ms->Unlock() ;
 } ;
 
 void PlayerMixer::StopStreaming() {
+	MixerService *ms=MixerService::GetInstance() ;
+	ms->Lock() ;
 	fileStreamer_.Stop() ;
+	ms->Unlock() ;
 } ;
 
 void PlayerMixer::OnPlayerStart() {
+	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+		channel_[i]->ResetEffects();
+	}
 	MixerService *ms=MixerService::GetInstance() ;
 	ms->OnPlayerStart();
 }
@@ -162,6 +190,9 @@ void PlayerMixer::OnPlayerStart() {
 void PlayerMixer::OnPlayerStop() {
 	MixerService *ms=MixerService::GetInstance() ;
 	ms->OnPlayerStop();
+	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+		channel_[i]->ResetEffects();
+	}
 }
 
 static char noteBuffer[5] ;

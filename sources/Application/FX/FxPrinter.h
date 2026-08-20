@@ -2,7 +2,6 @@
 #define FxPrinter_H
 
 #include <string>
-#include <sstream>
 #include "Application/Views/ViewData.h"
 #include "Application/Instruments/InstrumentBank.h"
 #include "Application/Instruments/SampleInstrument.h"
@@ -13,24 +12,20 @@ class FxPrinter {
 public:
     FxPrinter(ViewData* viewData);
     bool Run();
-    char *GetNotification();
+    const char *GetNotification();
 
   private:
     void setParams();
-    void setPaths();
-    std::string parseCommand();
+    bool setPaths();
     Path samples_dir;
-    Path impulse_dir;
     SampleInstrument* instrument_;
     ViewData* viewData_;
     int irPad_;
     int irWet_;
     std::string fi_;
-    std::string fo_;
-    std::string ir_;
+    std::string foPath_;
     std::string foWav_;
-    std::string ffmpeg_;
-    char* notificationResult_;
+    std::string notificationResult_;
 };
 
 #endif // FxPrinter_H

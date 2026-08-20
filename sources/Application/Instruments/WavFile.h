@@ -17,7 +17,8 @@ public:
 	virtual int GetSampleRate(int note) ;
 	virtual int GetChannelCount(int note) ;
 	virtual int GetRootNote(int note) ;
-	bool GetBuffer(long start,long sampleCount) ; // values in smples
+	// readChunkSize is in bytes; zero keeps the normal sample-loading policy.
+	bool GetBuffer(long start,long sampleCount,int readChunkSize=0) ;
 	void Close() ;
 	virtual bool IsMulti() {return false ; } ;
 
@@ -34,6 +35,7 @@ private:
 	int channelCount_ ; // mono / stereo
 	int bytePerSample_ ; // original file is in 8/16bit
 	int dataPosition_ ; // offset in file to get to data
+	long readPosition_ ; // tracked file offset, or -1 when unknown
 
 	static int bufferChunkSize_ ;
 	static bool initChunkSize_ ;
