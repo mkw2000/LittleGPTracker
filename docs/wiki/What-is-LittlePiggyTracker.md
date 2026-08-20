@@ -468,9 +468,25 @@ ARPG 4050: loops between original pitch, +4 semitones, +0 semitones, + 5 semiton
 
 **aa = pre crush drive (from 1 to 0xFF, 00 is no change) & bb = crush setting (from 0 to 0xF, 0x0 is 1 bit, 0xF is 16bit )**
 
+## CHOR --bb
+
+**Sets the per-track chorus wet amount. `00` turns chorus off and `FF` is maximum.**
+
 ## DLAY --bb
 
 **Delays the note to be played by bb tics**
+
+## ECHO --bb
+
+**Sets how much of the current track is sent into its stereo Echo. `00` turns the send off and `FF` is maximum.** Echo repeats already in the buffer continue to decay.
+
+## EFBK --bb
+
+**Sets Echo feedback. `00` produces one repeat and `FF` gives the longest decay.**
+
+## ETIM --bb
+
+**Sets Echo time in tempo-synced phrase steps.** `01` is one sixteenth note, `02` is an eighth note, `03` is a dotted eighth, and `04` is a quarter note. `00` is treated as `01`; very long times are limited by the two-second Echo buffer.
 
 ## FCUT aabb
 
@@ -483,6 +499,11 @@ ARPG 4050: loops between original pitch, +4 semitones, +0 semitones, + 5 semiton
 **lowpass filter, set absolute frequency value for cutoff aa & resonance bb**
 
 - FLTR 00FF is un-adultered sound
+
+## FLNG --bb
+
+**Sets the per-track flanger wet amount. `00` turns flanger off and `FF` is maximum.** CHOR and FLNG share one modulation line, so enabling one selects that mode.
+
 ## FRES aabb
 
 **adjust the filter resonance to bb at speed aa**
@@ -580,6 +601,10 @@ Sets MIDI note velocity
 RTRG 0001: loop one tick from current play position
 RTRG 0102: loop of two ticks but move the loop one tick every loop
 RTRG 0101: does not do anything because after looping one tick, you move forward one tick and therefore go back to the current position :)
+
+## RVRB --bb
+
+**Sets how much of the current track is sent into a compact realtime room reverb. `00` turns the send off and `FF` is maximum.** This is separate from the Instrument screen's non-destructive Render reverb action.
 
 ## TABL --bb
 

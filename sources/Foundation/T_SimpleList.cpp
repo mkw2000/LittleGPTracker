@@ -209,28 +209,71 @@ void T_SimpleList<Item>::SetOwnership(bool isOwner) {
 
 template <class Item>
 void T_SimpleList<Item>::Sort() {
-	if (_first==_last) return ;
-	Node<Item>* current=_first ;
-	Node<Item>* next=current->next ;
-	while (next!=0) {
-		int result=current->data.Compare(next->data) ;
-		if (result>0) {
-			exchange(current,next) ;
-			Node<Item> *temp=next ;
-			Node<Item> *prev=next->prev ;
-			while (prev!=0) {
-				if (temp->data.Compare(prev->data)>=0) {
-					break ;
-				} ;
-//			    Trace::Debug("Swapping %s and %s",temp->data.GetPath(),prev->data.GetPath()) ;
-				exchange(temp,prev) ;
-				prev=temp->prev ;
-			} ;
-		} else {
-			current=next ;
-		};
-		next=current->next ;
-	} ;
+	if (!_first || !_first->next) return ;
+
+	// Stable, allocation-free bottom-up merge sort. Relinking nodes keeps the
+	// addresses of list items unchanged, which is important because nodes hold
+	// references rather than copies of their data.
+	int runSize=1 ;
+	while (true) {
+		Node<Item> *current=_first ;
+		Node<Item> *newFirst=0 ;
+		Node<Item> *newLast=0 ;
+		int mergeCount=0 ;
+
+		while (current) {
+			mergeCount++ ;
+
+			Node<Item> *left=current ;
+			Node<Item> *right=current ;
+			int leftCount=0 ;
+			for (int i=0;i<runSize && right;i++) {
+				leftCount++ ;
+				right=right->next ;
+			}
+			int rightCount=runSize ;
+
+			while (leftCount>0 || (rightCount>0 && right)) {
+				Node<Item> *next ;
+				if (leftCount==0) {
+					next=right ;
+					right=right->next ;
+					rightCount-- ;
+				} else if (rightCount==0 || !right) {
+					next=left ;
+					left=left->next ;
+					leftCount-- ;
+				} else if (left->data.Compare(right->data)<=0) {
+					// Prefer the left run on equality to preserve stable ordering.
+					next=left ;
+					left=left->next ;
+					leftCount-- ;
+				} else {
+					next=right ;
+					right=right->next ;
+					rightCount-- ;
+				}
+
+				if (newLast) {
+					newLast->next=next ;
+				} else {
+					newFirst=next ;
+				}
+				next->prev=newLast ;
+				newLast=next ;
+			}
+
+			current=right ;
+		}
+
+		newLast->next=0 ;
+		_first=newFirst ;
+		_last=newLast ;
+		if (mergeCount<=1) return ;
+
+		// Avoid signed overflow for an impractically large list.
+		runSize=(runSize>_size/2)?_size:runSize*2 ;
+	}
 }
 
 template <class Item>

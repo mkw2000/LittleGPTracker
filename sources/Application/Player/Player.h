@@ -72,6 +72,7 @@ public:
 
     void ProcessCommands();
     bool ProcessChannelCommand(int channel,FourCC cmd,ushort param) ;
+    bool ProcessFXCommand(int channel,FourCC cmd,ushort param) ;
 
 	void StartStreaming(const Path &path) ;
 	void StopStreaming() ;

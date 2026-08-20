@@ -1,0 +1,86 @@
+-include $(PWD)/rules_base
+
+# rules_base's legacy dependency post-processing emits one empty target per
+# header. Modern GNU Make parses those entries as malformed pattern rules, so
+# keep the compiler-generated .d files in their native form on macOS.
+define adjustdepends
+endef
+
+DEFINES := \
+	-DPLATFORM_$(PLATFORM) \
+	-DCPP_MEMORY \
+	-DSDL2 \
+	-D_64BIT \
+	-D__MACOSX_CORE__ \
+	-DRTMIDI
+
+HOMEBREW_PREFIX ?= $(shell brew --prefix 2>/dev/null || echo /opt/homebrew)
+SDL_CFLAGS := $(shell pkg-config --cflags sdl2 2>/dev/null)
+SDL_LIBDIR := $(shell pkg-config --variable=libdir sdl2 2>/dev/null)
+ifeq ($(strip $(SDL_CFLAGS)),)
+SDL_CFLAGS := -I$(HOMEBREW_PREFIX)/include -I$(HOMEBREW_PREFIX)/include/SDL2 -D_THREAD_SAFE
+endif
+ifeq ($(strip $(SDL_LIBDIR)),)
+SDL_LIBDIR := $(HOMEBREW_PREFIX)/lib
+endif
+
+SDL2_RUNTIME := $(SDL_LIBDIR)/libSDL2-2.0.0.dylib
+SDL2_RUNTIME_ID := $(shell otool -D "$(SDL2_RUNTIME)" 2>/dev/null | tail -n 1)
+SDL3_PREFIX := $(shell brew --prefix sdl3 2>/dev/null)
+ifeq ($(strip $(SDL3_PREFIX)),)
+SDL3_PREFIX := $(HOMEBREW_PREFIX)/opt/sdl3
+endif
+SDL3_RUNTIME := $(SDL3_PREFIX)/lib/libSDL3.0.dylib
+
+# The Homebrew SDL2 runtime used by this build is compiled for macOS 15.
+# Keep the app's declared minimum aligned with the bundled runtime.
+MACOSX_DEPLOYMENT_TARGET ?= 15.0
+ARCHFLAGS ?= -arch $(shell uname -m)
+
+CFLAGS := -O3 -Wall $(ARCHFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) $(DEFINES) $(SDL_CFLAGS) -I$(PWD)/../sources -I$(PWD)/../sources/Externals
+CXXFLAGS := $(CFLAGS) -std=gnu++03
+LDFLAGS := $(ARCHFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) -Wl,-headerpad_max_install_names
+SDL_LIBS := $(shell pkg-config --libs-only-L sdl2 2>/dev/null) -lSDL2
+ifeq ($(strip $(SDL_LIBS)), -lSDL2)
+SDL_LIBS := -L$(SDL_LIBDIR) -lSDL2
+endif
+LIBS := $(SDL_LIBS) -framework Cocoa -framework CoreAudio -framework CoreFoundation -framework CoreMIDI -framework AudioToolbox -lpthread
+
+EXTENSION := app
+
+# Assemble a self-contained app so it can be launched from Finder without an
+# SDL2 installation or the repository's working directory.
+MACOS_RESOURCES := \
+	../Info.plist \
+	../piggy.icns \
+	../lgpt_icon.bmp \
+	../resources/MACOS/config.xml \
+	../resources/MACOS/mapping.xml
+
+%.app: $(OFILES) $(MACOS_RESOURCES)
+	@rm -rf "$@"
+	@mkdir -p "$@/Contents/MacOS" "$@/Contents/Resources" "$@/Contents/Frameworks"
+	@echo "linking macOS app bundle..."
+	$(CXX) $(LDFLAGS) -o "$@/Contents/MacOS/$(TARGET)" $(OFILES) $(LIBS)
+	@cp ../Info.plist "$@/Contents/Info.plist"
+	@cp ../piggy.icns "$@/Contents/Resources/piggy.icns"
+	@cp ../lgpt_icon.bmp "$@/Contents/Resources/lgpt_icon.bmp"
+	@cp ../resources/MACOS/config.xml "$@/Contents/Resources/config.xml"
+	@cp ../resources/MACOS/mapping.xml "$@/Contents/Resources/mapping.xml"
+	@if test -f "$(SDL2_RUNTIME)"; then cp -L "$(SDL2_RUNTIME)" "$@/Contents/Frameworks/libSDL2-2.0.0.dylib"; else cp -L "$(SDL_LIBDIR)/libSDL2.dylib" "$@/Contents/Frameworks/libSDL2-2.0.0.dylib"; fi
+	@if strings "$(SDL2_RUNTIME)" 2>/dev/null | grep -q "Failed loading SDL3 library"; then \
+		if test ! -f "$(SDL3_RUNTIME)"; then echo "SDL2-compat requires SDL3 at $(SDL3_RUNTIME)"; exit 1; fi; \
+		cp -L "$(SDL3_RUNTIME)" "$@/Contents/Frameworks/libSDL3.0.dylib"; \
+		cp -L "$(SDL3_RUNTIME)" "$@/Contents/Frameworks/libSDL3.dylib"; \
+	fi
+	@if test -n "$(SDL2_RUNTIME_ID)"; then install_name_tool -change "$(SDL2_RUNTIME_ID)" "@rpath/libSDL2-2.0.0.dylib" "$@/Contents/MacOS/$(TARGET)"; fi
+	@install_name_tool -add_rpath "@loader_path/../Frameworks" "$@/Contents/MacOS/$(TARGET)"
+	@install_name_tool -id "@rpath/libSDL2-2.0.0.dylib" "$@/Contents/Frameworks/libSDL2-2.0.0.dylib"
+	@if test -f "$@/Contents/Frameworks/libSDL3.0.dylib"; then \
+		install_name_tool -delete_rpath "@loader_path/../../../../opt/sdl3/lib" "$@/Contents/Frameworks/libSDL2-2.0.0.dylib" 2>/dev/null || true; \
+		install_name_tool -add_rpath "@loader_path" "$@/Contents/Frameworks/libSDL2-2.0.0.dylib" 2>/dev/null || true; \
+		install_name_tool -id "@rpath/libSDL3.0.dylib" "$@/Contents/Frameworks/libSDL3.0.dylib"; \
+		install_name_tool -id "@rpath/libSDL3.dylib" "$@/Contents/Frameworks/libSDL3.dylib"; \
+	fi
+	@chmod +x "$@/Contents/MacOS/$(TARGET)"
+	@codesign --force --deep --sign - "$@"

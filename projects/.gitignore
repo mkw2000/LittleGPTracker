@@ -53,3 +53,8 @@ xcuserdata/
 
 # End of https://www.toptal.com/developers/gitignore/api/xcode,macos
 
+# Generated native macOS build output
+/LittleGPTracker.app/
+/buildMACOS/
+/LittleGPTracker-macOS-arm64.zip
+/lgpt.log

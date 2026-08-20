@@ -38,15 +38,17 @@ public: // I_GUIWindowImp implementation
 	virtual void PushEvent(GUIEvent &event) ;
 
 public: // Added functionality
-	void ProcessExpose() ;
+	void ProcessExpose(bool forceRedraw=false) ;
 	void ProcessQuit() ;
 	void ProcessUserEvent(SDL_Event &event) ;
+	void ToggleFullscreen() ;
 protected:
 	void prepareFonts() ;
 	void prepareFullFonts() ;
-	void prepareBPP1Fonts() ;
+  void prepareBPP1Fonts() ;
   void transform(const GUIRect &srcRect,SDL_Rect *dstRect);
   void transform(const GUIPoint &srcPoint, int *x, int *y);
+  void updateWindowMetrics() ;
 
 private:
     SDL_Window *window_;
@@ -60,10 +62,12 @@ private:
 	bool cacheFonts_ ;
 	bool framebuffer_ ;
   bool windowed_;
+	bool fontsPrepared_;
 	SDL_Rect updateRects_[MAX_OVERLAYS] ;
 	int updateCount_ ;
 	int appAnchorX_ ;
 	int appAnchorY_ ;
 	int mult_ ;
+	int windowedMult_ ;
 } ;
 #endif

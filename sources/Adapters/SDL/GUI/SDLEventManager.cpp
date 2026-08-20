@@ -39,11 +39,18 @@ bool SDLEventManager::Init()
 	joyCount=(joyCount>MAX_JOY_COUNT)?MAX_JOY_COUNT:joyCount ;
 
 	keyboardCS_=new KeyboardControllerSource("keyboard") ;
+#if defined(PLATFORM_PSP) && defined(NDEBUG)
+	// Per-button logging opens and flushes a Memory Stick file twice per press.
+	// Keep it out of release PSP builds even when an older external config.xml
+	// still has the historical debug setting enabled.
+	dumpEvent_=false ;
+#else
 	const char *dumpIt=Config::GetInstance()->GetValue("DUMPEVENT") ;
 	if ((dumpIt)&&(!strcmp(dumpIt,"YES")))
   {
 		dumpEvent_=true ;
 	}
+#endif
 
 	for (int i=0;i<MAX_JOY_COUNT;i++) 
   {

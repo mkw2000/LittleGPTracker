@@ -1,6 +1,5 @@
 
 #include "PSPSystem.h"
-#include "PSPCrashHandler.h"
 #include "Adapters/Dummy/Midi/DummyMidi.h"
 #include "Adapters/PSP/FileSystem/PSPFileSystem.h"
 #include "Adapters/SDL/Audio/SDLAudio.h"
@@ -45,8 +44,6 @@ bool PSPSystem::Boot(int argc,char **argv) {
 
 	Path bootPath(argv[0]) ;
 	Path parent=bootPath.GetParent() ;
-	bool crashHandlerInstalled =
-	    PSPCrashHandler::Install(parent.GetPath().c_str());
 
 	Path::SetAlias("bin",parent.GetPath().c_str()) ;
 	Path::SetAlias("root",parent.GetPath().c_str()) ;
@@ -64,11 +61,6 @@ bool PSPSystem::Boot(int argc,char **argv) {
   {
     Trace::GetInstance()->SetLogger(*fileLogger);    
   }
-	if (crashHandlerInstalled)
-		Trace::Log("PSP", "Crash reports enabled at %s",
-		           PSPCrashHandler::GetReportPath());
-	else
-		Trace::Error("Could not install PSP crash reporter");
 	 
 	// Install GUI Factory
 	I_GUIWindowFactory::Install(new GUIFactory()) ;

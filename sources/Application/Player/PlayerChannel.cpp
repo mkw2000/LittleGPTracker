@@ -25,6 +25,23 @@ PlayerChannel::PlayerChannel(int index) {
 PlayerChannel::~PlayerChannel() {
 }
 
+bool PlayerChannel::InitEffects(int sampleRate) {
+    return trackFx_.Init(sampleRate);
+}
+
+void PlayerChannel::CloseEffects() {
+    trackFx_.Close();
+}
+
+void PlayerChannel::ResetEffects() {
+    trackFx_.Reset();
+}
+
+bool PlayerChannel::ProcessFXCommand(FourCC command,
+                                     unsigned short parameter) {
+    return trackFx_.ProcessCommand(command, parameter);
+}
+
 void PlayerChannel::StartInstrument(I_Instrument *instr,unsigned char note,bool trigger) {
    if (instr_) {
       StopInstrument() ;
@@ -44,9 +61,10 @@ void PlayerChannel::StopInstrument() {
 } ;
 
 bool PlayerChannel::Render(fixed *buffer,int samplecount) {
+   bool status=false;
    if (instr_) {
      bool tableSlice=SyncMaster::GetInstance()->TableSlice() ;
-     bool status=instr_->Render(index_,buffer,samplecount,tableSlice) ;
+     status=instr_->Render(index_,buffer,samplecount,tableSlice) ;
      if (status && !muted_) {
          // Apply HPF if enabled
          if (hpfMode_ != 0) {
@@ -94,10 +112,17 @@ bool PlayerChannel::Render(fixed *buffer,int samplecount) {
              }
          }
      }
-     return (status && !muted_);
-   } else {
-       return false;
    }
+
+   bool hasInput=status && !muted_;
+   if (!hasInput) {
+       for (int i=0;i<samplecount*2;i++) {
+           buffer[i]=0;
+       }
+   }
+   int stepSamples=SyncMaster::GetInstance()->GetStepSampleCount();
+   bool fxStatus=trackFx_.Process(buffer,samplecount,hasInput,stepSamples);
+   return muted_ ? false : fxStatus;
 } ;
 
 I_Instrument *PlayerChannel::GetInstrument() {
@@ -181,4 +206,5 @@ void PlayerChannel::Reset() {
   lpfPrevOutput_[0] = lpfPrevOutput_[1] = i2fp(0);
   lpfAlpha_ = i2fp(0);
   lpfFreq_ = 0;
+  trackFx_.Reset();
 };

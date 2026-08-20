@@ -17,7 +17,7 @@ static const char *buttonText[3]= {
 } ;
 
 ImportSampleDialog::ImportSampleDialog(View &view)
-    : ModalView(view), sampleList_(true) {
+    : ModalView(view), directory_(0), sampleList_(false) {
 	if (!initStatic_) {
 		const char *slpath=SamplePool::GetInstance()->GetSampleLib() ;
 		sampleLib_=Path(slpath) ;
@@ -28,6 +28,11 @@ ImportSampleDialog::ImportSampleDialog(View &view)
 } ;
 
 ImportSampleDialog::~ImportSampleDialog() {
+	// sampleList_ only references Paths owned by directory_. Remove its nodes
+	// before releasing the directory and its entries.
+	sampleList_.Empty() ;
+	delete directory_ ;
+	directory_=0 ;
 } ;
 
 void ImportSampleDialog::DrawView() {
@@ -61,6 +66,8 @@ void ImportSampleDialog::DrawView() {
 	int count=0 ;
 	char buffer[256] ;
 	for(it->Begin();!it->IsDone();it->Next()) {
+		if (count>=topIndex_+LIST_SIZE)
+			break ;
 		if ((count>=topIndex_)&&(count<topIndex_+LIST_SIZE)) {
 			Path &current=it->CurrentItem() ;
 			const std::string p=current.GetName() ;
@@ -72,13 +79,10 @@ void ImportSampleDialog::DrawView() {
 				SetColor(CD_NORMAL) ;
                 props.invert_ = current.Matches("*.sf2");
             }
-			if (!current.IsDirectory()) {
-				strcpy(buffer,p.c_str()) ;
-			} else {
-				buffer[0]='[' ;
-				strcpy(buffer+1,p.c_str()) ;
-				strcat(buffer,"]") ;
-			}
+			if (!current.IsDirectory())
+				snprintf(buffer,sizeof(buffer),"%s",p.c_str()) ;
+			else
+				snprintf(buffer,sizeof(buffer),"[%s]",p.c_str()) ;
 			buffer[LIST_WIDTH-1]=0 ;
 			DrawString(x,y,buffer,props) ;
 			y+=1 ;
@@ -174,7 +178,10 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 		Path *element = getImportElement();
 		if (!element)
 			return ;
-		setCurrent(element, mask);
+		// Entering a directory rebuilds the list and invalidates element.
+		// Navigation therefore consumes this button event completely.
+		if (setCurrent(element, mask))
+			return ;
 
 		switch(selected_) {
 			case 0: // preview
@@ -197,10 +204,19 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 	} else if (mask&EPBM_START) { // START Modifier
 		if (mask&EPBM_UP) warpToNextSample(-1);
 		if (mask&EPBM_DOWN) warpToNextSample(1);
+		if (mask&EPBM_LEFT) { // Navigate up
+			if (!isSampleLibRoot()) {
+				Path parent=currentPath_.GetParent() ;
+				setCurrentFolder(&parent) ;
+				isDirty_=true ;
+			}
+			return ;
+		}
 		Path *element = getImportElement();
 		if (!element)
 			return ;
-		setCurrent(element, mask);
+		if (setCurrent(element, mask))
+			return ;
 		if(!element->IsDirectory()) {
 			preview(*element);
 		}
@@ -208,14 +224,6 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 			if (!element->IsDirectory()) {
 				endPreview();
 				import(*element);
-			}
-		}
-		if (mask&EPBM_LEFT) { // Navigate up
-			if (isSampleLibRoot()) {
-			} else {
-				Path parent = element->GetParent().GetParent();
-				setCurrentFolder(&parent);
-				isDirty_=true;
 			}
 		}
 	} else { // No modifier
@@ -251,7 +259,7 @@ Path* ImportSampleDialog::getImportElement() {
 	return 0 ;
 }
 
-void ImportSampleDialog::setCurrent(Path *element, unsigned short mask) {
+bool ImportSampleDialog::setCurrent(Path *element, unsigned short mask) {
 	if (selected_ != 2 && element->IsDirectory() && // Folders
 		!(mask&EPBM_UP||mask&EPBM_DOWN)) { // Don't browse preview folders
 			if (element->GetName()=="..") {
@@ -264,25 +272,35 @@ void ImportSampleDialog::setCurrent(Path *element, unsigned short mask) {
 			setCurrentFolder(element);
 		}
 		isDirty_ = true;
-		return;
+		return true;
 	}
+	return false;
 }
 
 void ImportSampleDialog::setCurrentFolder(Path *path) {
 	if (!path)
 		return ;
 
+	// The requested Path commonly belongs to directory_. Copy it before the
+	// old directory is released below.
+	Path requestedPath(*path) ;
 	Path formerPath(currentPath_) ;
 	topIndex_=0 ;
 	currentSample_=0 ;
-	currentPath_=Path(*path) ;
+	currentPath_=requestedPath ;
 	sampleList_.Empty() ;
+	delete directory_ ;
+	directory_=0 ;
 
 	int count=0 ;
-	I_Dir *dir=FileSystem::GetInstance()->Open(path->GetPath().c_str()) ;
+	I_Dir *dir=
+	    FileSystem::GetInstance()->Open(requestedPath.GetPath().c_str()) ;
 	if (!dir)
 		return ;
+	directory_=dir ;
 
+	Trace::Log("SampleBrowser", "Opening %s",
+	           requestedPath.GetPath().c_str()) ;
 	dir->GetContent("*") ;
 	dir->Sort() ;
 	{
@@ -292,8 +310,7 @@ void ImportSampleDialog::setCurrentFolder(Path *path) {
 			if (current.IsDirectory()) {
 				if (current.GetName().substr(0,1)!="." ||
 				    current.GetName()=="..") {
-					Path *sample=new Path(current) ;
-					sampleList_.Insert(sample) ;
+					sampleList_.Insert(current) ;
 					if (!formerPath.Compare(current))
 						currentSample_=count ;
 					count++ ;
@@ -305,10 +322,10 @@ void ImportSampleDialog::setCurrentFolder(Path *path) {
 			if (!current.IsDirectory() &&
 			    (current.Matches("*.wav") || current.Matches("*.sf2")) &&
 			    current.GetName()[0]!='.') {
-				Path *sample=new Path(current) ;
-				sampleList_.Insert(sample) ;
+				sampleList_.Insert(current) ;
 			}
 		}
 	}
-	delete dir ;
+	Trace::Log("SampleBrowser", "Opened %s with %d visible entries",
+	           requestedPath.GetPath().c_str(), sampleList_.Size()) ;
 } ;

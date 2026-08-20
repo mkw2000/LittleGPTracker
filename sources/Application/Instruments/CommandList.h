@@ -34,6 +34,12 @@
 #define I_CMD_FBTN MAKE_FOURCC('F','B','T','N')
 #define I_CMD_SLCE MAKE_FOURCC('S','L','C','E')
 #define I_CMD_STOP MAKE_FOURCC('S','T','O','P')
+#define I_CMD_ECHO MAKE_FOURCC('E','C','H','O')
+#define I_CMD_ETIM MAKE_FOURCC('E','T','I','M')
+#define I_CMD_EFBK MAKE_FOURCC('E','F','B','K')
+#define I_CMD_CHOR MAKE_FOURCC('C','H','O','R')
+#define I_CMD_FLNG MAKE_FOURCC('F','L','N','G')
+#define I_CMD_RVRB MAKE_FOURCC('R','V','R','B')
 
 class CommandList {
 public:
@@ -50,4 +56,3 @@ public:
 	static bool IsLast(FourCC current) ;
 };
 #endif
-

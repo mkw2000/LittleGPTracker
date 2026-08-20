@@ -179,7 +179,14 @@ WavFile *SamplePool::loadWavSource(const char *path) {
         Trace::Error("Failed to open sample %s", wavPath.GetName().c_str());
         return 0;
     }
-    if (!wave->GetBuffer(0, wave->GetSize(-1))) {
+#ifdef PLATFORM_PSP
+    // Larger sequential reads materially reduce Memory Stick syscall overhead
+    // while adding at most 12 KiB to the temporary WAV read buffer.
+    const int readChunkSize = 16 * 1024;
+#else
+    const int readChunkSize = 0;
+#endif
+    if (!wave->GetBuffer(0, wave->GetSize(-1), readChunkSize)) {
         Trace::Error("Failed to load sample data %s",
                      wavPath.GetName().c_str());
         delete wave;

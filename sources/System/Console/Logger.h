@@ -22,4 +22,5 @@ public:
 private:
   virtual void AddLine(const char*);
   Path path_;
+  bool limitReached_;
 };

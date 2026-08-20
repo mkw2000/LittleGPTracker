@@ -5,12 +5,17 @@
 #include "Services/Audio/AudioModule.h"
 #include "Application/Instruments/I_Instrument.h"
 #include "Application/Mixer/MixBus.h"
+#include "Application/FX/TrackFx.h"
 
 class PlayerChannel: public AudioModule {
 public:
 	PlayerChannel(int index) ;
 	virtual ~PlayerChannel() ;
 	virtual bool Render(fixed *buffer,int samplecount) ;
+	bool InitEffects(int sampleRate) ;
+	void CloseEffects() ;
+	void ResetEffects() ;
+	bool ProcessFXCommand(FourCC command, unsigned short parameter) ;
 	void StartInstrument(I_Instrument *instr,unsigned char note,bool cleanStart) ;
 	void StopInstrument() ;
 	I_Instrument *GetInstrument() ;
@@ -37,6 +42,7 @@ public:
     fixed lpfPrevOutput_[2];
     fixed lpfAlpha_;
     unsigned short lpfFreq_;
+	TrackFx trackFx_ ;
 };
 
 #endif

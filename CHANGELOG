@@ -1,8 +1,13 @@
 Unreleased — fork work
+    Realtime track effects
+        * Added tempo-synced stereo Echo with send, time, and feedback commands
+        * Added lightweight chorus/flanger and room reverb commands
+        * Made all realtime effects available from phrases and tables, default-off
+
     PSP stability and diagnostics
         * Safe suspend/resume sequencing for SDL audio
-        * PSP crash reports with register, stack, memory, and log breadcrumbs
-        * Previous-session log rotation
+        * Previous-session log rotation and detailed save/import breadcrumbs
+        * Cap each session log at 256 KiB
 
     Native instrument reverb
         * Replaced external FFmpeg PrintFX with native room, hall, spring, and church presets
@@ -12,7 +17,18 @@ Unreleased — fork work
     Import and persistence hardening
         * Reuse existing project WAVs during import
         * Stop preview I/O before importing and guard empty directory selections
+        * Avoid duplicate path allocations and unsafe filename copies in large sample folders
+        * Stop folder-navigation events before they can reuse freed browser entries
         * Add save breadcrumbs and safer file logging
+
+    PSP sample browsing and playback performance
+        * Cache directory entry types and replace quadratic list sorting with stable merge sorting
+        * Add bounded WAV preview read-ahead and avoid redundant sequential file seeks
+        * Load project/import WAV data in larger sequential PSP Memory Stick reads
+        * Copy imported samples with a 32 KiB buffer and safe low-memory fallback
+        * Reuse mixer iterators and scratch buffers instead of allocating in every audio slice
+        * Combine mixer metering passes and fast-path the default fixed-point clipping path
+        * Disable release-build per-button Memory Stick logging
 
     Migrate W32 to SDL2, removing need for building in vs2008
 

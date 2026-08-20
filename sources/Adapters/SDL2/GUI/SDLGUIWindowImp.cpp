@@ -5,6 +5,7 @@
 #include "Application/Utils/char.h"
 #include "System/Console/n_assert.h"
 #include "System/Console/Trace.h"
+#include "System/FileSystem/FileSystem.h"
 #include "System/System/System.h"
 #include "UIFramework/BasicDatas/GUIEvent.h"
 #include "UIFramework/SimpleBaseClasses/GUIWindow.h"
@@ -21,6 +22,8 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   SDLCreateWindowParams &sdlP=(SDLCreateWindowParams &)p;
   cacheFonts_=sdlP.cacheFonts_ ;
   framebuffer_=sdlP.framebuffer_ ;
+  fontsPrepared_=false ;
+  windowedMult_=1 ;
   
   // By default if we are not running a framebuffer device
   // we assumed it's windowed
@@ -70,6 +73,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   if ((fullscreenValue)&&(!strcmp(fullscreenValue,"YES")))
   {
   	fullscreen=true ;
+    windowed_=false ;
   }
   	
   if (!strcmp(driverName, "fbcon"))
@@ -99,7 +103,10 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
 		}
 	}
   #endif
-  // Create a window that is the requested size
+	windowedMult_=mult_ ;
+  // Create a resizable window. SDL_WINDOW_FULLSCREEN_DESKTOP keeps the
+  // desktop's native resolution and lets us switch Spaces on macOS without
+  // changing the display mode.
   
   screenRect_._topLeft._x=0;
   screenRect_._topLeft._y=0;
@@ -107,19 +114,30 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   screenRect_._bottomRight._y=windowed_?appHeight*mult_:screenHeight;
 
   Trace::Log("DISPLAY","Creating SDL Window (%d,%d)",screenRect_.Width(), screenRect_.Height());
+    SDL_SetHint("SDL_VIDEO_MAC_FULLSCREEN_SPACES","1");
+    Uint32 windowFlags=SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE;
+    if (fullscreen)
+    {
+      windowFlags|=SDL_WINDOW_FULLSCREEN_DESKTOP;
+    }
     window_ = SDL_CreateWindow("LittleGPTracker",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,
-                               screenRect_.Width(),screenRect_.Height(),fullscreen?SDL_WINDOW_FULLSCREEN:SDL_WINDOW_SHOWN);
+                               screenRect_.Width(),screenRect_.Height(),windowFlags);
     NAssert(window_) ;
+	SDL_SetWindowMinimumSize(window_,appWidth*mult_,appHeight*mult_);
 
 	// Compute the x & y offset to locate our app window
 
-	appAnchorX_=(screenRect_.Width()-appWidth*mult_)/2 ;
-	appAnchorY_=(screenRect_.Height()-appHeight*mult_)/2 ;
-
-    SDL_SetWindowIcon(window_, SDL_LoadBMP("lgpt_icon.bmp"));
+	Path iconPath("bin:lgpt_icon.bmp") ;
+	SDL_Surface *icon=SDL_LoadBMP(iconPath.GetPath().c_str()) ;
+	if (icon)
+	{
+		SDL_SetWindowIcon(window_,icon) ;
+		SDL_FreeSurface(icon) ;
+	}
     surface_ = SDL_GetWindowSurface(window_);
 
     NAssert(surface_) ;
+	updateWindowMetrics() ;
 
     Uint32 rmask, gmask, bmask, amask;
 
@@ -146,6 +164,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   {
     Trace::Log("DISPLAY","Preparing fonts") ;
 		prepareFonts() ;
+		fontsPrepared_=true ;
 	}
 	updateCount_=0 ;
 } ;
@@ -159,6 +178,14 @@ static SDL_Surface *fonts[FONT_COUNT] ;
 void SDLGUIWindowImp::prepareFullFonts()
 {
   Trace::Log("DISPLAY","Preparing full font cache") ;
+	for (int i=0;i<FONT_COUNT;i++)
+	{
+		if (fonts[i])
+		{
+			SDL_FreeSurface(fonts[i]) ;
+			fonts[i]=0 ;
+		}
+	}
   Uint32 rmask, gmask, bmask, amask;
 
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
@@ -498,7 +525,21 @@ void SDLGUIWindowImp::Flush()
     // blit partial updates on resource constrained platforms
     if ((!framebuffer_)&&(updateCount_!=0))
     {
-        if (updateCount_<MAX_OVERLAYS)
+        if (!windowed_)
+        {
+            // A fullscreen macOS Space can drop individual software-surface
+            // dirty rectangles while the window is being composited. The
+            // actual app canvas is only 960x720, so refreshing that complete
+            // canvas keeps navigation and animated controls intact without
+            // copying the unused letterbox area.
+            SDL_Rect appRect;
+            appRect.x=appAnchorX_;
+            appRect.y=appAnchorY_;
+            appRect.w=appWidth*mult_;
+            appRect.h=appHeight*mult_;
+            SDL_UpdateWindowSurfaceRects(window_,&appRect,1);
+        }
+        else if (updateCount_<MAX_OVERLAYS)
         {
             SDL_UpdateWindowSurfaceRects(window_,updateRects_,updateCount_);
         }
@@ -515,10 +556,100 @@ void SDLGUIWindowImp::Flush()
     updateCount_=0;
 }
 
-void SDLGUIWindowImp::ProcessExpose() 
+void SDLGUIWindowImp::updateWindowMetrics()
+{
+  if (!window_)
+  {
+    return;
+  }
+
+  SDL_Surface *windowSurface=SDL_GetWindowSurface(window_);
+  if (!windowSurface)
+  {
+    Trace::Error("DISPLAY","Unable to get the SDL window surface after a resize: %s",SDL_GetError());
+    return;
+  }
+
+  surface_=windowSurface;
+  int width=surface_->w;
+  int height=surface_->h;
+  if ((width<=0)||(height<=0))
+  {
+    SDL_GetWindowSize(window_,&width,&height);
+  }
+
+  screenRect_._topLeft._x=0;
+  screenRect_._topLeft._y=0;
+  screenRect_._bottomRight._x=width;
+  screenRect_._bottomRight._y=height;
+
+  Uint32 windowFlags=SDL_GetWindowFlags(window_);
+  bool nextWindowed=(windowFlags&SDL_WINDOW_FULLSCREEN)==0;
+  int previousMult=mult_;
+  windowed_=nextWindowed;
+  if (windowed_)
+  {
+    mult_=windowedMult_;
+  }
+  else
+  {
+    int fullscreenMult=MIN(width/appWidth,height/appHeight);
+    if (fullscreenMult<1)
+    {
+      fullscreenMult=1;
+    }
+    mult_=fullscreenMult;
+  }
+  if ((mult_!=previousMult)&&cacheFonts_&&fontsPrepared_)
+  {
+    Trace::Log("DISPLAY","Rebuilding font cache for scale %d",mult_);
+    prepareFonts() ;
+  }
+  SDL_SetWindowMinimumSize(window_,appWidth*mult_,appHeight*mult_);
+  appAnchorX_=(width-appWidth*mult_)/2;
+  appAnchorY_=(height-appHeight*mult_)/2;
+  if (appAnchorX_<0)
+  {
+    appAnchorX_=0;
+  }
+  if (appAnchorY_<0)
+  {
+    appAnchorY_=0;
+  }
+  updateCount_=0;
+  Trace::Log("DISPLAY","Window surface (%d,%d), scale=%d, app anchor (%d,%d), fullscreen=%s",
+    width,height,mult_,appAnchorX_,appAnchorY_,windowed_?"NO":"YES");
+}
+
+void SDLGUIWindowImp::ToggleFullscreen()
+{
+  if (!window_)
+  {
+    return;
+  }
+
+  Uint32 windowFlags=SDL_GetWindowFlags(window_);
+  bool fullscreen=(windowFlags&SDL_WINDOW_FULLSCREEN)!=0;
+  Uint32 target=fullscreen?0:SDL_WINDOW_FULLSCREEN_DESKTOP;
+  if (SDL_SetWindowFullscreen(window_,target)<0)
+  {
+    Trace::Error("DISPLAY","Unable to toggle fullscreen: %s",SDL_GetError());
+    return;
+  }
+  ProcessExpose(true);
+}
+
+void SDLGUIWindowImp::ProcessExpose(bool forceRedraw)
 {
     // Expose and resize events will cause a new surface to be needed.
-    surface_ = SDL_GetWindowSurface(window_);
+    updateWindowMetrics();
+    if (forceRedraw)
+    {
+      // Entering a new macOS Space creates a fresh surface. The app's
+      // character cache still matches the previous surface, so a normal
+      // Update() would only flush changed cells and leave stale/blank areas.
+      _window->ForceFullRedraw();
+    }
     _window->Update() ;
 }
 

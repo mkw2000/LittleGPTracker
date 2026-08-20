@@ -633,6 +633,10 @@ void Player::ProcessCommands() {
 
 bool Player::ProcessChannelCommand(int channel, FourCC cmd, ushort param) {
 
+    if (ProcessFXCommand(channel, cmd, param)) {
+        return true;
+    }
+
     I_Instrument *instr = mixer_->GetInstrument(channel);
 
     switch (cmd) {
@@ -689,6 +693,10 @@ bool Player::ProcessChannelCommand(int channel, FourCC cmd, ushort param) {
 			break;
         }
         return false;
+}
+
+bool Player::ProcessFXCommand(int channel, FourCC cmd, ushort param) {
+    return mixer_->ProcessFXCommand(channel, cmd, param);
 }
 
 /********************************************************

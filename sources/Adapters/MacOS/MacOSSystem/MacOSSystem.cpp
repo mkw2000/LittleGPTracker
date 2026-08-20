@@ -17,6 +17,9 @@
 #include <time.h>
 #include <sys/time.h>
 #include <memory.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 EventManager *MacOSSystem::eventManager_ = NULL ;
@@ -45,7 +48,9 @@ void MacOSSystem::Boot(int argc,char **argv)
 #ifdef _DEBUG
   Trace::GetInstance()->SetLogger(*(new StdOutLogger()));
 #else
-  Path logPath("bin:lgpt.log");
+  // Contents/Resources is code-signed. Keep the mutable diagnostic log next
+  // to the app bundle so launching the app does not invalidate its signature.
+  Path logPath("root:lgpt.log");
   FileLogger *fileLogger=new FileLogger(logPath);
   if(fileLogger->Init().Succeeded())
   {
@@ -66,6 +71,7 @@ void MacOSSystem::Boot(int argc,char **argv)
 	hints.audioDevice_="" ;
 	hints.bufferSize_=64 ;
 	hints.preBufferCount_=0;
+	hints.sampleRate_=44100;
 	
 	Audio::Install(new RTAudioStub(hints)) ;
 
@@ -98,34 +104,47 @@ void MacOSSystem::Shutdown()
 
 void MacOSSystem::installAliases()
 {
-	// aliases
-	
-	char path[1024];
+	// Keep executable resources inside the app bundle while leaving projects and
+	// samples next to the app, where users can edit and back them up normally.
+	char bundlePath[PATH_MAX];
 	CFBundleRef mainBundle = CFBundleGetMainBundle();
-	NAssert( mainBundle );
-  
+	if (!mainBundle)
+	{
+		return;
+	}
+
 	CFURLRef mainBundleURL = CFBundleCopyBundleURL( mainBundle);
-	NAssert( mainBundleURL);
-  
-	CFStringRef cfStringRef = CFURLCopyFileSystemPath( mainBundleURL, kCFURLPOSIXPathStyle);
-	NAssert( cfStringRef);
-  
-	CFStringGetCString( cfStringRef, path, 1024, kCFStringEncodingASCII);
-  
+	if (!mainBundleURL)
+	{
+		return;
+	}
+
+	Boolean pathOK = CFURLGetFileSystemRepresentation(
+		mainBundleURL, true, (UInt8 *)bundlePath, sizeof(bundlePath));
 	CFRelease( mainBundleURL);
-	CFRelease( cfStringRef );
-  
-	std::string asciiPath = path;
-  
-	// get the package directory:
+	if (!pathOK)
+	{
+		return;
+	}
+
+	// LaunchServices normally gives us an absolute URL, but direct launches can
+	// preserve a relative bundle path. Canonicalize it before installing aliases.
+	char absoluteBundlePath[PATH_MAX];
+	if (realpath(bundlePath, absoluteBundlePath))
+	{
+		strncpy(bundlePath, absoluteBundlePath, sizeof(bundlePath) - 1);
+		bundlePath[sizeof(bundlePath) - 1] = 0;
+	}
+
+	std::string asciiPath = bundlePath;
+
+	// Get the directory containing the .app bundle for project data.
 	std::string::size_type pos = asciiPath.find_last_of('/');
-	std::string directoryPath (asciiPath, 0, pos);
+	std::string directoryPath = (pos == std::string::npos) ? std::string(".") : std::string(asciiPath, 0, pos);
+	std::string resourcesPath = asciiPath + "/Contents/Resources";
   
-	// set the bin path alias:
-	std::string binPath = directoryPath;
-	
-	Path::SetAlias("bin",binPath.c_str()) ;
-	Path::SetAlias("root",binPath.c_str()) ;
+	Path::SetAlias("bin",resourcesPath.c_str()) ;
+	Path::SetAlias("root",directoryPath.c_str()) ;
 }
 
 //------------------------------------------------------------------------------

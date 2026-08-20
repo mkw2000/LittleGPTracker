@@ -124,6 +124,12 @@ void PSPDir::GetContent(char *mask) {
 
   SceIoDirent de;
   memset(&de,0,sizeof(SceIoDirent));
+	const bool matchAll=!strcmp(mask,"*") ;
+	std::string fullpath=path_ ;
+	if (fullpath[fullpath.size()-1]!='/') {
+		fullpath+="/" ;
+	}
+	const size_t prefixLength=fullpath.size() ;
 
   SceUID fd=sceIoDopen(path_);
   if(fd<0) {
@@ -137,21 +143,35 @@ void PSPDir::GetContent(char *mask) {
     while(v>0) {
 
         // See if matches current mask
-        int len = strlen(de.d_name);
-        for (int i = 0; i < len; i++) {
-            nameBuffer[i] = tolower((unsigned char)de.d_name[i]);
+        size_t len = 0;
+        while (len < sizeof(de.d_name) && de.d_name[len])
+            len++;
+        if (len >= sizeof(nameBuffer)) {
+            Trace::Error("Skipping unterminated PSP directory entry");
+            memset(&de, 0, sizeof(SceIoDirent));
+            v = sceIoDread(fd, &de);
+            continue;
         }
-        nameBuffer[len]=0 ;
-		
-		if (wildcardfit(mask,nameBuffer)) {
-
-			std::string fullpath=path_ ;
-			if (path_[strlen(path_)-1]!='/') {
-				fullpath+="/" ;
+		if (!matchAll) {
+			for (size_t i = 0; i < len; i++) {
+				nameBuffer[i] = tolower((unsigned char)de.d_name[i]);
 			}
-			fullpath+=de.d_name ;
+			nameBuffer[len]=0 ;
+		}
 		
-			Path *path=new Path(fullpath.c_str()) ;
+		if (matchAll || wildcardfit(mask,nameBuffer)) {
+
+			// Reuse the string allocation for every entry in this directory.
+			fullpath.resize(prefixLength) ;
+			fullpath.append(de.d_name,len) ;
+		
+			FileType type=FT_UNKNOWN ;
+			if (FIO_S_ISDIR(de.d_stat.st_mode)) {
+				type=FT_DIR ;
+			} else if (FIO_S_ISREG(de.d_stat.st_mode)) {
+				type=FT_FILE ;
+			}
+			Path *path=new Path(fullpath.c_str(),type) ;
 			Insert(path) ;
 
 		}

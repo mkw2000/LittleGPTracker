@@ -22,6 +22,7 @@ class Path {
 public:
 	Path() ;
 	Path(const char *path) ;
+	Path(const char *path,FileType type) ;
 	Path(const std::string &path) ;
 	Path(const Path &path) ;
 

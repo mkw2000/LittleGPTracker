@@ -49,6 +49,7 @@ WavFile::WavFile(I_File *file) {
 	size_=0 ;
 	readBuffer_=0 ;
 	readBufferSize_=0 ;
+	readPosition_=-1 ;
 	sampleBufferSize_=0 ;
 	file_=file ;
 } ;
@@ -204,27 +205,39 @@ int WavFile::GetSampleRate(int note) {
 
 long WavFile::readBlock(long start,long size) {
 	if (start < 0 || size <= 0 || size > INT_MAX)
-        return 0;
+		return 0;
 	if (size>readBufferSize_) {
 		SAFE_FREE(readBuffer_) ;
 		readBuffer_=SYS_MALLOC(size) ;
 		readBufferSize_=readBuffer_ ? size : 0 ;
 	}
-  if (!readBuffer_)
-  {
-    Trace::Error("Failed to allocate read buffer of size %d",size);
-  }
-  else
-  {
-	file_->Seek(start,SEEK_SET) ;
-	int bytesRead = file_->Read(readBuffer_, 1, (int)size);
-	return bytesRead > 0 ? bytesRead : 0;
-  }
+	if (!readBuffer_) {
+		readPosition_=-1 ;
+		Trace::Error("Failed to allocate read buffer of size %d",size);
+	} else {
+		if (readPosition_!=start) {
+			file_->Seek(start,SEEK_SET) ;
+			long actualPosition=file_->Tell() ;
+			if (actualPosition!=start) {
+				readPosition_=-1 ;
+				return 0 ;
+			}
+			readPosition_=start ;
+		}
+		int bytesRead = file_->Read(readBuffer_, 1, (int)size);
+		if (bytesRead>0) {
+			readPosition_+=bytesRead ;
+			if (bytesRead!=(int)size) readPosition_=-1 ;
+			return bytesRead ;
+		}
+		readPosition_=-1 ;
+		return 0 ;
+	}
 	return 0 ;
 } ;
 
 
-bool WavFile::GetBuffer(long start,long size) {
+bool WavFile::GetBuffer(long start,long size,int readChunkSize) {
 	if (start < 0 || size <= 0 || start > size_ || size > size_ - start)
         return false;
 
@@ -264,10 +277,11 @@ bool WavFile::GetBuffer(long start,long size) {
 	int count=bufferSize ;
 	int offset=0 ;
 	char *ptr=(char *)samples_ ;
-	int readSize =
-   (bufferChunkSize_>0) 
-   ? bufferChunkSize_
-   : count>4096?4096:count;
+	int readSize = (readChunkSize>0)
+	                   ? ((count>readChunkSize)?readChunkSize:count)
+	               : (bufferChunkSize_>0)
+	                   ? bufferChunkSize_
+	                   : ((count>4096)?4096:count);
 
 	while (count>0) {
 		readSize=(count>readSize)?readSize:count ;
@@ -279,7 +293,8 @@ bool WavFile::GetBuffer(long start,long size) {
 		bufferStart+=readSize ;
 		count-=readSize ;
 		offset+=readSize ;
-		if (bufferChunkSize_>0) TimeService::GetInstance()->Sleep(1) ;
+		if (readChunkSize<=0 && bufferChunkSize_>0)
+			TimeService::GetInstance()->Sleep(1) ;
 	}
 
 
@@ -300,6 +315,7 @@ bool WavFile::GetBuffer(long start,long size) {
 void WavFile::Close() {
 	file_->Close() ;
 	SAFE_DELETE(file_) ;
+	readPosition_=-1 ;
 	SAFE_FREE(readBuffer_) ;
 	readBufferSize_=0 ;
 } ;

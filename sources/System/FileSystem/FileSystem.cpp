@@ -17,6 +17,12 @@ Path::Path(const char *path):gotType_(false),type_(FT_UNKNOWN) {
 	strcpy(path_,path) ;
 } ;
 
+Path::Path(const char *path,FileType type)
+	:gotType_(type!=FT_UNKNOWN),type_(type) {
+	path_=(char *)malloc((int)strlen(path)+1) ;
+	strcpy(path_,path) ;
+} ;
+
 Path::Path(const std::string &path):gotType_(false),type_(FT_UNKNOWN) {
 	path_=(char *)malloc(path.size()+1) ;
 	strcpy(path_,path.c_str()) ;
@@ -88,9 +94,11 @@ Path Path::Descend(const std::string& leaf)
 }
 
 void Path::getType() {
-	gotType_=true ;
-	std::string resolved=GetPath() ;
-	type_=FileSystem::GetInstance()->GetFileType(resolved.c_str()) ;
+	if (!gotType_) {
+		gotType_=true ;
+		std::string resolved=GetPath() ;
+		type_=FileSystem::GetInstance()->GetFileType(resolved.c_str()) ;
+	}
 } ;
 
 std::string Path::GetName() {
@@ -189,8 +197,6 @@ void Path::Alias::SetPath(const char *path) {
 
 int FileSystemService::Copy(const Path &src,const Path &dst)
 {
-  const int bufsize=4096;
-  char buffer[bufsize];
   int count = 0;
   int total=0;
 
@@ -212,7 +218,14 @@ int FileSystemService::Copy(const Path &src,const Path &dst)
     return -1;
   }
 
-  while ((count = isrc->Read(buffer, sizeof(char), bufsize)) > 0) {
+  const int fallbackBufferSize=4096;
+  const int preferredBufferSize=32*1024;
+  char fallbackBuffer[fallbackBufferSize];
+  char *allocatedBuffer=(char *)SYS_MALLOC(preferredBufferSize);
+  char *buffer=allocatedBuffer?allocatedBuffer:fallbackBuffer;
+  int bufferSize=allocatedBuffer?preferredBufferSize:fallbackBufferSize;
+
+  while ((count = isrc->Read(buffer, sizeof(char), bufferSize)) > 0) {
       int written = idst->Write(buffer, sizeof(char), count);
       if (written != count) {
           Trace::Error("Short write copying to %s (%d of %d bytes)",
@@ -226,11 +239,16 @@ int FileSystemService::Copy(const Path &src,const Path &dst)
     Trace::Error("Read failed copying from %s",src.GetPath().c_str());
     total=-1;
   }
+  if (!idst->Flush()) {
+    Trace::Error("Flush failed copying to %s",dst.GetPath().c_str());
+    total=-1;
+  }
 
   isrc->Close();
   idst->Close();
   delete isrc;
   delete idst;
+  SAFE_FREE(allocatedBuffer);
 
   if (total<0) {
     fs->Delete(dst.GetPath().c_str());
